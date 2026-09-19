@@ -1,0 +1,76 @@
+name: Build Monopoly Records Bot APK
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main ]
+
+permissions:
+  contents: read
+
+env:
+  WUZAPI_COMMIT: 5f0350f3af2abf6900739cc8e23b55700510451d
+
+jobs:
+  build-apk:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout app
+        uses: actions/checkout@v4
+
+      - name: Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Android 35
+        run: |
+          yes | sdkmanager --licenses >/dev/null || true
+          sdkmanager "platform-tools" "platforms;android-35" "build-tools;35.0.0"
+
+      - name: Go 1.26
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.26.0'
+
+      - name: Build WuzAPI for Android ARM64
+        shell: bash
+        run: |
+          set -euxo pipefail
+          git clone https://github.com/asternic/wuzapi.git /tmp/wuzapi
+          cd /tmp/wuzapi
+          git checkout "$WUZAPI_COMMIT"
+          mkdir -p "$GITHUB_WORKSPACE/app/src/main/jniLibs/arm64-v8a"
+          CGO_ENABLED=0 GOOS=android GOARCH=arm64 go build -trimpath -buildmode=pie -ldflags='-s -w' -o "$GITHUB_WORKSPACE/app/src/main/jniLibs/arm64-v8a/libwuzapi.so" .
+          file "$GITHUB_WORKSPACE/app/src/main/jniLibs/arm64-v8a/libwuzapi.so"
+          ls -lh "$GITHUB_WORKSPACE/app/src/main/jniLibs/arm64-v8a/libwuzapi.so"
+
+      - name: Gradle 8.9
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+
+      - name: Compile APK
+        run: gradle --no-daemon :app:assembleDebug
+
+      - name: Verify APK
+        run: |
+          test -f app/build/outputs/apk/debug/app-debug.apk
+          cp app/build/outputs/apk/debug/app-debug.apk app/build/outputs/apk/debug/MonopolyRecordsBot-Samsung-A56.apk
+          sha256sum app/build/outputs/apk/debug/MonopolyRecordsBot-Samsung-A56.apk | tee app/build/outputs/apk/debug/MonopolyRecordsBot-Samsung-A56.apk.sha256
+          ls -lh app/build/outputs/apk/debug/MonopolyRecordsBot-Samsung-A56.apk
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: MonopolyRecordsBot-Samsung-A56
+          if-no-files-found: error
+          path: |
+            app/build/outputs/apk/debug/MonopolyRecordsBot-Samsung-A56.apk
+            app/build/outputs/apk/debug/MonopolyRecordsBot-Samsung-A56.apk.sha256
+          retention-days: 30
