@@ -10,6 +10,8 @@ permissions:
 
 env:
   WUZAPI_COMMIT: 5f0350f3af2abf6900739cc8e23b55700510451d
+  ANDROID_HOME: /usr/local/lib/android/sdk
+  ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
 
 jobs:
   build-apk:
@@ -20,18 +22,19 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Java 17
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: '17'
 
-      - name: Android SDK
-        uses: android-actions/setup-android@v3
-
       - name: Android 35
+        shell: bash
         run: |
-          yes | sdkmanager --licenses >/dev/null || true
-          sdkmanager "platform-tools" "platforms;android-35" "build-tools;35.0.0"
+          set -euxo pipefail
+          SDKMANAGER="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+          yes | "$SDKMANAGER" --licenses >/dev/null || true
+          "$SDKMANAGER" "platform-tools" "platforms;android-35" "build-tools;35.0.0"
+          "$ANDROID_HOME/build-tools/35.0.0/aapt2" version
 
       - name: Go 1.26
         uses: actions/setup-go@v5
