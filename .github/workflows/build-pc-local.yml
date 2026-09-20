@@ -428,46 +428,18 @@ jobs:
               1
           )
 
-          contact_ui_old = """        if typ=='contact':
-              for lab,key in [('Nombre','name'),('Número','number')]:
-                  r=ttk.Frame(self.body);r.pack(fill='x',pady=5);ttk.Label(r,text=lab,width=22).pack(side='left');sv=tk.StringVar(value=str(self.v.get(key,'')));self.widgets[key]=sv;ttk.Entry(r,textvariable=sv).pack(side='left',fill='x',expand=True)
-          if typ in ('buttons','list'):"""
-          contact_ui_new = """        if typ=='contact':
-              for lab,key in [('Nombre','name'),('Número','number')]:
-                  r=ttk.Frame(self.body);r.pack(fill='x',pady=5);ttk.Label(r,text=lab,width=22).pack(side='left');sv=tk.StringVar(value=str(self.v.get(key,'')));self.widgets[key]=sv;ttk.Entry(r,textvariable=sv).pack(side='left',fill='x',expand=True)
-          if typ=='save_contact':
-              ttk.Label(self.body,text='AUTOGUARDAR CONTACTO DEL CLIENTE',font=('Segoe UI',11,'bold')).pack(anchor='w',pady=(2,8))
-              ttk.Label(self.body,text='Cuando esta regla coincida, se guardará el número que escribió por WhatsApp dentro de Contactos del negocio seleccionado. Si ya existe, se actualiza la última interacción sin duplicarlo.',wraplength=690,foreground=MUTED).pack(anchor='w',pady=(0,12))
-              for lab,key,default in [('Nombre a guardar','contact_name','@nombre'),('Etiqueta','label','Cliente')]:
-                  r=ttk.Frame(self.body);r.pack(fill='x',pady=5);ttk.Label(r,text=lab,width=22).pack(side='left');sv=tk.StringVar(value=str(self.v.get(key,default)));self.widgets[key]=sv;ttk.Entry(r,textvariable=sv).pack(side='left',fill='x',expand=True)
-              ttk.Label(self.body,text='Nota (opcional)').pack(anchor='w',pady=(12,3));nt=tk.Text(self.body,height=5,wrap='word');nt.pack(fill='x');nt.insert('1.0',self.v.get('note',''));self.widgets['note']=nt
-              ttk.Label(self.body,text='Variables disponibles: @nombre, @telefono, @mensaje, @hora, @dia, @fecha_completa.',foreground=MUTED).pack(anchor='w',pady=8)
-          if typ in ('buttons','list'):"""
+          contact_ui_old = "        if typ=='contact':\n            for lab,key in [('Nombre','name'),('Número','number')]:\n                r=ttk.Frame(self.body);r.pack(fill='x',pady=5);ttk.Label(r,text=lab,width=22).pack(side='left');sv=tk.StringVar(value=str(self.v.get(key,'')));self.widgets[key]=sv;ttk.Entry(r,textvariable=sv).pack(side='left',fill='x',expand=True)\n        if typ in ('buttons','list'):"
+          contact_ui_new = "        if typ=='contact':\n            for lab,key in [('Nombre','name'),('Número','number')]:\n                r=ttk.Frame(self.body);r.pack(fill='x',pady=5);ttk.Label(r,text=lab,width=22).pack(side='left');sv=tk.StringVar(value=str(self.v.get(key,'')));self.widgets[key]=sv;ttk.Entry(r,textvariable=sv).pack(side='left',fill='x',expand=True)\n        if typ=='save_contact':\n            ttk.Label(self.body,text='AUTOGUARDAR CONTACTO DEL CLIENTE',font=('Segoe UI',11,'bold')).pack(anchor='w',pady=(2,8))\n            ttk.Label(self.body,text='Cuando esta regla coincida, se guardará el número que escribió por WhatsApp dentro de Contactos del negocio seleccionado. Si ya existe, se actualiza la última interacción sin duplicarlo.',wraplength=690,foreground=MUTED).pack(anchor='w',pady=(0,12))\n            for lab,key,default in [('Nombre a guardar','contact_name','@nombre'),('Etiqueta','label','Cliente')]:\n                r=ttk.Frame(self.body);r.pack(fill='x',pady=5);ttk.Label(r,text=lab,width=22).pack(side='left');sv=tk.StringVar(value=str(self.v.get(key,default)));self.widgets[key]=sv;ttk.Entry(r,textvariable=sv).pack(side='left',fill='x',expand=True)\n            ttk.Label(self.body,text='Nota (opcional)').pack(anchor='w',pady=(12,3));nt=tk.Text(self.body,height=5,wrap='word');nt.pack(fill='x');nt.insert('1.0',self.v.get('note',''));self.widgets['note']=nt\n            ttk.Label(self.body,text='Variables disponibles: @nombre, @telefono, @mensaje, @hora, @dia, @fecha_completa.',foreground=MUTED).pack(anchor='w',pady=8)\n        if typ in ('buttons','list'):"
           if contact_ui_old not in g:
               raise SystemExit("No se encontró UI de acciones")
           g = g.replace(contact_ui_old,contact_ui_new,1)
 
-          summary_old = """    def summary(self,a):
-              t=a.get('type','');
-              if t in ('buttons','list'):return (a.get('text') or '')[:90]+f" · {len(a.get('buttons',a.get('sections',[])))} opciones"
-              return (a.get('text') or a.get('name') or a.get('file_name') or '')[:110]"""
-          summary_new = """    def summary(self,a):
-              t=a.get('type','');
-              if t=='save_contact':return f"Autoguardar contacto · {a.get('contact_name') or '@nombre'} · {a.get('label') or 'Cliente'}"
-              if t in ('buttons','list'):return (a.get('text') or '')[:90]+f" · {len(a.get('buttons',a.get('sections',[])))} opciones"
-              return (a.get('text') or a.get('name') or a.get('file_name') or '')[:110]"""
+          summary_old = "    def summary(self,a):\n        t=a.get('type','');\n        if t in ('buttons','list'):return (a.get('text') or '')[:90]+f\" · {len(a.get('buttons',a.get('sections',[])))} opciones\"\n        return (a.get('text') or a.get('name') or a.get('file_name') or '')[:110]"
+          summary_new = "    def summary(self,a):\n        t=a.get('type','');\n        if t=='save_contact':return f\"Autoguardar contacto · {a.get('contact_name') or '@nombre'} · {a.get('label') or 'Cliente'}\"\n        if t in ('buttons','list'):return (a.get('text') or '')[:90]+f\" · {len(a.get('buttons',a.get('sections',[])))} opciones\"\n        return (a.get('text') or a.get('name') or a.get('file_name') or '')[:110]"
           g = g.replace(summary_old,summary_new,1)
 
-          tabs_old = """    def make_tabs(self):
-              self.tabs={}
-              for name in ['Inicio','Negocios','WhatsApp','Reglas','Archivos','Estados','Logs','Configuración']:
-                  f=ttk.Frame(self.nb,padding=16);self.nb.add(f,text=name);self.tabs[name]=f
-              self.build_home();self.build_profiles();self.build_whatsapp();self.build_rules();self.build_media();self.build_status();self.build_logs();self.build_settings()"""
-          tabs_new = """    def make_tabs(self):
-              self.tabs={}
-              for name in ['Inicio','Negocios','WhatsApp','Reglas','Archivos','Contactos','Estados','Logs','Configuración']:
-                  f=ttk.Frame(self.nb,padding=16);self.nb.add(f,text=name);self.tabs[name]=f
-              self.build_home();self.build_profiles();self.build_whatsapp();self.build_rules();self.build_media();self.build_contacts();self.build_status();self.build_logs();self.build_settings()"""
+          tabs_old = "    def make_tabs(self):\n        self.tabs={}\n        for name in ['Inicio','Negocios','WhatsApp','Reglas','Archivos','Estados','Logs','Configuración']:\n            f=ttk.Frame(self.nb,padding=16);self.nb.add(f,text=name);self.tabs[name]=f\n        self.build_home();self.build_profiles();self.build_whatsapp();self.build_rules();self.build_media();self.build_status();self.build_logs();self.build_settings()"
+          tabs_new = "    def make_tabs(self):\n        self.tabs={}\n        for name in ['Inicio','Negocios','WhatsApp','Reglas','Archivos','Contactos','Estados','Logs','Configuración']:\n            f=ttk.Frame(self.nb,padding=16);self.nb.add(f,text=name);self.tabs[name]=f\n        self.build_home();self.build_profiles();self.build_whatsapp();self.build_rules();self.build_media();self.build_contacts();self.build_status();self.build_logs();self.build_settings()"
           g = g.replace(tabs_old,tabs_new,1)
           g = g.replace(
               "    def profile_changed(self):self.refresh_home();self.refresh_rules();self.refresh_status();self.refresh_logs();self.refresh_whatsapp()",
