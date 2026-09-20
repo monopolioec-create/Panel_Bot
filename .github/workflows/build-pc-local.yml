@@ -864,21 +864,11 @@ jobs:
                   raise SystemExit("No se encontró build_contacts para Google")
               g=g[:pos]+google_ui+g[pos:]
 
-          desc = "                  ttk.Label(f,text='Los contactos se guardan localmente por negocio cuando una regla usa la acción save_contact. No se duplican por número. Puedes exportarlos a CSV o VCF para llevarlos a otra agenda.',wraplength=980,foreground=MUTED).pack(anchor='w',pady=(2,10))\n"
-          google_box = """                  ttk.Label(f,text='Los contactos siempre se guardan primero en esta PC. Google Contacts es opcional: si lo conectas, cada contacto nuevo se sincroniza en segundo plano; si Google falla o no está configurado, el guardado local sigue funcionando.',wraplength=980,foreground=MUTED).pack(anchor='w',pady=(2,10))
-                  google=ttk.LabelFrame(f,text='Google Contacts (opcional)',padding=10);google.pack(fill='x',pady=(0,10))
-                  self.google_contacts_status=tk.StringVar(value='Solo guardado local')
-                  ttk.Label(google,textvariable=self.google_contacts_status,font=('Segoe UI',10,'bold')).pack(side='left',padx=(0,12))
-                  ttk.Button(google,text='Conectar Google',command=self.connect_google_contacts).pack(side='left')
-                  ttk.Button(google,text='Sincronizar todos',command=self.sync_all_google_contacts).pack(side='left',padx=5)
-                  ttk.Button(google,text='Desconectar',command=self.disconnect_google_contacts).pack(side='left')
-                  ttk.Button(google,text='Guía de configuración',command=self.open_google_setup_help).pack(side='right')
-                  self.refresh_google_contacts_status()
-          """
-          google_box=textwrap.dedent(google_box)
-          if desc not in g:
-              raise SystemExit("No se encontró descripción de Contactos")
-          g=g.replace(desc,google_box,1)
+          top_anchor = "        top=ttk.Frame(f);top.pack(fill='x')"
+          google_box = "        google=ttk.LabelFrame(f,text='Google Contacts (opcional)',padding=10);google.pack(fill='x',pady=(0,10))\n        self.google_contacts_status=tk.StringVar(value='Solo guardado local')\n        ttk.Label(google,textvariable=self.google_contacts_status,font=('Segoe UI',10,'bold')).pack(side='left',padx=(0,12))\n        ttk.Button(google,text='Conectar Google',command=self.connect_google_contacts).pack(side='left')\n        ttk.Button(google,text='Sincronizar todos',command=self.sync_all_google_contacts).pack(side='left',padx=5)\n        ttk.Button(google,text='Desconectar',command=self.disconnect_google_contacts).pack(side='left')\n        ttk.Button(google,text='Guía de configuración',command=self.open_google_setup_help).pack(side='right')\n        self.refresh_google_contacts_status()\n"
+          if top_anchor not in g:
+              raise SystemExit("No se encontró ancla de Contactos para Google")
+          g=g.replace(top_anchor,google_box+top_anchor,1)
 
           old_pc = "    def profile_changed(self):self.refresh_home();self.refresh_rules();self.refresh_contacts();self.refresh_status();self.refresh_logs();self.refresh_whatsapp()"
           new_pc = "    def profile_changed(self):self.refresh_home();self.refresh_rules();self.refresh_contacts();self.refresh_google_contacts_status();self.refresh_status();self.refresh_logs();self.refresh_whatsapp()"
