@@ -9,6 +9,8 @@ on:
       - 'pc_local/test_v210.py'
       - 'pc_local/patch_v212.py'
       - 'pc_local/test_v212.py'
+      - 'pc_local/patch_v220.py'
+      - 'pc_local/test_v220.py'
       - 'pc_local/patch_v213.py'
       - 'pc_local/test_v213.py'
       - '.github/workflows/build-pc-local.yml'
@@ -1268,6 +1270,7 @@ jobs:
 
           python pc_local\patch_v210.py pc_local\buildsrc
           python pc_local\patch_v212.py pc_local\buildsrc
+          python pc_local\patch_v220.py pc_local\buildsrc
           python pc_local\patch_v213.py pc_local\buildsrc
 
       - name: Setup Python
@@ -1593,6 +1596,12 @@ jobs:
         run: |
           Set-Location "$env:GITHUB_WORKSPACE"
           python pc_local\test_v213.py pc_local\buildsrc
+
+      - name: Internal v2.2.0 feature and regression tests
+        shell: powershell
+        run: |
+          Set-Location "$env:GITHUB_WORKSPACE"
+          python pc_local\test_v220.py pc_local\buildsrc
 
       - name: Generate application icon
         shell: powershell
