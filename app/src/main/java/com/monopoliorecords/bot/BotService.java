@@ -31,11 +31,18 @@ public class BotService extends Service {
                             JSONObject j=jobs.getJSONObject(i);String id=j.optString("id");
                             try{String m=engine.executeJob(j);panel.jobResult(id,true,m);}catch(Exception e){panel.jobResult(id,false,e.getMessage());}
                         }
-                        panel.heartbeat(wuz.status());
+                        JSONObject hb=wuz.status();
+                        hb.put("bot_service",true);
+                        hb.put("last_message_at",Prefs.get(this,"last_message_at",""));
+                        hb.put("last_message_text",Prefs.get(this,"last_message_text",""));
+                        hb.put("last_message_from",Prefs.get(this,"last_message_from",""));
+                        hb.put("last_reply_at",Prefs.get(this,"last_reply_at",""));
+                        hb.put("last_reply_to",Prefs.get(this,"last_reply_to",""));
+                        panel.heartbeat(hb);
                     }
                     updateNotification();
                 }catch(Exception e){android.util.Log.e("BotService","sync",e);}
-                Thread.sleep(20000);
+                Thread.sleep(5000);
             }
         }catch(Exception e){android.util.Log.e("BotService","fatal",e);notifyText("Error: "+e.getMessage());}
     }
@@ -55,9 +62,9 @@ public class BotService extends Service {
     }
 
     private void updateNotification(){JSONObject s=wuz.status();JSONObject d=s.optJSONObject("data");boolean on=d!=null&&d.optBoolean("LoggedIn",false);notifyText(on?"WhatsApp conectado · bot activo":"Bot activo · WhatsApp pendiente");}
-    private Notification notification(String text){Intent i=new Intent(this,MainActivity.class);PendingIntent pi=PendingIntent.getActivity(this,0,i,PendingIntent.FLAG_UPDATE_CURRENT|(Build.VERSION.SDK_INT>=23?PendingIntent.FLAG_IMMUTABLE:0));return new Notification.Builder(this,Build.VERSION.SDK_INT>=26?CH:null).setSmallIcon(R.drawable.ic_notify).setContentTitle("Monopoly Records Bot").setContentText(text).setOngoing(true).setContentIntent(pi).build();}
+    private Notification notification(String text){Intent i=new Intent(this,MainActivity.class);PendingIntent pi=PendingIntent.getActivity(this,0,i,PendingIntent.FLAG_UPDATE_CURRENT|(Build.VERSION.SDK_INT>=23?PendingIntent.FLAG_IMMUTABLE:0));return new Notification.Builder(this,Build.VERSION.SDK_INT>=26?CH:null).setSmallIcon(R.drawable.ic_notify).setContentTitle("Monopolio Records Bot").setContentText(text).setOngoing(true).setContentIntent(pi).build();}
     private void notifyText(String t){((NotificationManager)getSystemService(NOTIFICATION_SERVICE)).notify(14,notification(t));}
-    private void createChannel(){if(Build.VERSION.SDK_INT>=26){NotificationChannel c=new NotificationChannel(CH,"Monopoly Records Bot",NotificationManager.IMPORTANCE_LOW);((NotificationManager)getSystemService(NOTIFICATION_SERVICE)).createNotificationChannel(c);}}
+    private void createChannel(){if(Build.VERSION.SDK_INT>=26){NotificationChannel c=new NotificationChannel(CH,"Monopolio Records Bot",NotificationManager.IMPORTANCE_LOW);((NotificationManager)getSystemService(NOTIFICATION_SERVICE)).createNotificationChannel(c);}}
     @Override public int onStartCommand(Intent i,int f,int id){if(i!=null&&ACTION_RESTART_ENGINE.equals(i.getAction()))restartEngine();return START_STICKY;}
     @Override public void onDestroy(){running=false;if(webhook!=null)webhook.stop();if(wuz!=null)wuz.stop();super.onDestroy();}
     @Override public android.os.IBinder onBind(Intent i){return null;}
