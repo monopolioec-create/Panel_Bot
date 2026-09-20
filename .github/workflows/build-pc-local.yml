@@ -413,23 +413,23 @@ jobs:
 
           action_marker = """        text=self.vars(a.get('text',a.get('caption','')),phone,name,msg)
 
-              if typ=='text':"""
+        if typ=='text':"""
           contact_action = """        text=self.vars(a.get('text',a.get('caption','')),phone,name,msg)
 
-              if typ=='save_contact':
-                  resolved_phone=normalize_contact_phone(phone or str(route).split('@',1)[0])
-                  display_name=self.vars(a.get('contact_name') or '@nombre',phone,name,msg).strip()
-                  if not display_name:
-                      display_name=(name or '').strip()
-                      if not display_name:
-                          display_name=f'Cliente {resolved_phone[-4:]}' if resolved_phone else 'Cliente'
-                  label=self.vars(a.get('label') or 'Cliente',phone,name,msg).strip()
-                  note=self.vars(a.get('note') or '',phone,name,msg).strip()
-                  cid,created=save_customer_contact(pid,resolved_phone,display_name,label,note,msg,rule_name)
-                  log(pid,'info',f"Contacto {'guardado' if created else 'actualizado'} · {display_name} · {resolved_phone} · ID {cid}")
-                  return
+        if typ=='save_contact':
+            resolved_phone=normalize_contact_phone(phone or str(route).split('@',1)[0])
+            display_name=self.vars(a.get('contact_name') or '@nombre',phone,name,msg).strip()
+            if not display_name:
+                display_name=(name or '').strip()
+                if not display_name:
+                    display_name=f'Cliente {resolved_phone[-4:]}' if resolved_phone else 'Cliente'
+            label=self.vars(a.get('label') or 'Cliente',phone,name,msg).strip()
+            note=self.vars(a.get('note') or '',phone,name,msg).strip()
+            cid,created=save_customer_contact(pid,resolved_phone,display_name,label,note,msg,rule_name)
+            log(pid,'info',f"Contacto {'guardado' if created else 'actualizado'} · {display_name} · {resolved_phone} · ID {cid}")
+            return
 
-              if typ=='text':"""
+        if typ=='text':"""
           if action_marker not in s:
               raise SystemExit("No se encontró execute_action para contactos")
           s = s.replace(action_marker,contact_action,1)
