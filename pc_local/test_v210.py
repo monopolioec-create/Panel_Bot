@@ -97,4 +97,19 @@ for forbidden in [
 ]:
     assert forbidden not in gui, f"Quedó texto técnico visible: {forbidden}"
 
-print("V2.1.0 TESTS OK: español Colombia + miniaturas/lista + fecha/hora interactiva + Estados texto/imagen/video")
+# Verificar que la actualización de Biblioteca no elimine funciones de Google/Contactos.
+spec=importlib.util.spec_from_file_location("gui_local_test",root/"gui_local.py")
+G=importlib.util.module_from_spec(spec)
+spec.loader.exec_module(G)
+for method in [
+    "refresh_google_contacts_status",
+    "connect_google_contacts",
+    "disconnect_google_contacts",
+    "sync_all_google_contacts",
+    "build_contacts",
+    "build_media",
+    "build_status",
+]:
+    assert hasattr(G.App,method), f"Falta método de interfaz después del parche: {method}"
+
+print("V2.1.1 TESTS OK: español Colombia + miniaturas/lista + Estados + Contactos/Google preservados")
