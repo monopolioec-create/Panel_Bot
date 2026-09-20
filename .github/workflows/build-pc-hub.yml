@@ -32,6 +32,42 @@ jobs:
           try { $text = $utf8.GetString($raw) } catch { $text = [Text.Encoding]::GetEncoding(1252).GetString($raw) }
           [IO.File]::WriteAllText("pc_hub\buildsrc\hub.py",$text,(New-Object System.Text.UTF8Encoding($false)))
 
+          $hubPath = "pc_hub\buildsrc\hub.py"
+          $hub = Get-Content $hubPath -Raw
+          $hub = $hub.Replace('APP_VERSION = "1.0.0"', 'APP_VERSION = "1.0.1"')
+          $old = @'
+    def list_users(self):
+        code, j = self.admin("GET", "/admin/users")
+        return j if code == 200 and isinstance(j, list) else []
+'@
+          $new = @'
+    def list_users(self):
+        code, j = self.admin("GET", "/admin/users")
+        if code != 200:
+            return []
+        if isinstance(j, list):
+            return j
+        if isinstance(j, dict):
+            data = j.get("data")
+            if isinstance(data, list):
+                return data
+            if isinstance(data, dict):
+                users = data.get("users") or data.get("Users")
+                if isinstance(users, list):
+                    return users
+        return []
+'@
+          if (-not $hub.Contains($old)) { throw "No se encontró bloque list_users para parchear" }
+          $hub = $hub.Replace($old, $new)
+          [IO.File]::WriteAllText($hubPath,$hub,(New-Object System.Text.UTF8Encoding($false)))
+
+          $issPath = "pc_hub\buildsrc\installer.iss"
+          $iss = Get-Content $issPath -Raw
+          $iss = $iss.Replace('AppVersion=1.0.0','AppVersion=1.0.1')
+          $iss = $iss.Replace('AppVerName=Monopolio MultiBot Hub version 1.0.0','AppVerName=Monopolio MultiBot Hub version 1.0.1')
+          $iss = $iss.Replace('OutputBaseFilename=MonopolioMultiBotHub_Setup_v1.0.0','OutputBaseFilename=MonopolioMultiBotHub_Setup_v1.0.1')
+          [IO.File]::WriteAllText($issPath,$iss,(New-Object System.Text.UTF8Encoding($false)))
+
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
@@ -72,12 +108,12 @@ jobs:
         run: |
           Set-Location "$env:GITHUB_WORKSPACE\pc_hub\buildsrc"
           & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" installer.iss
-          Get-Item output\MonopolioMultiBotHub_Setup_v1.0.0.exe
-          Get-FileHash output\MonopolioMultiBotHub_Setup_v1.0.0.exe -Algorithm SHA256 | Format-List
+          Get-Item output\MonopolioMultiBotHub_Setup_v1.0.1.exe
+          Get-FileHash output\MonopolioMultiBotHub_Setup_v1.0.1.exe -Algorithm SHA256 | Format-List
 
       - name: Upload Installer
         uses: actions/upload-artifact@v4
         with:
           name: MonopolioMultiBotHub-Windows
-          path: pc_hub/buildsrc/output/MonopolioMultiBotHub_Setup_v1.0.0.exe
+          path: pc_hub/buildsrc/output/MonopolioMultiBotHub_Setup_v1.0.1.exe
           retention-days: 30
