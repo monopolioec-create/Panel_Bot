@@ -140,7 +140,7 @@ public class RuleEngine {
         if(id==null||id.isEmpty())return false;
         String raw=Prefs.get(c,"dedupe_ids","");
         LinkedHashSet<String> set=new LinkedHashSet<>();
-        if(!raw.isEmpty())for(String x:raw.split("\\n"))if(!x.isEmpty())set.add(x);
+        if(!raw.isEmpty())for(String x:raw.split(";;"))if(!x.isEmpty())set.add(x);
         if(set.contains(id))return true;
         set.add(id);
         while(set.size()>200){
@@ -148,7 +148,7 @@ public class RuleEngine {
             if(it.hasNext()){it.next();it.remove();}else break;
         }
         StringBuilder out=new StringBuilder();
-        for(String x:set){if(out.length()>0)out.append("\\n");out.append(x);}
+        for(String x:set){if(out.length()>0)out.append(";;");out.append(x);}
         Prefs.put(c,"dedupe_ids",out.toString());
         return false;
     }
