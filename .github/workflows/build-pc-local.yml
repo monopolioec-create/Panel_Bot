@@ -39,13 +39,13 @@ jobs:
           Expand-Archive -Force pc_local\source.zip pc_local\buildsrc
 
           @'
-          import pathlib, re, textwrap
+          import ast, pathlib, re, textwrap
 
           root = pathlib.Path(r"pc_local\buildsrc")
 
           core_path = root / "core_local.py"
           s = core_path.read_text(encoding="utf-8")
-          s = s.replace("APP_VERSION = '2.0.0'", "APP_VERSION = '2.0.3'")
+          s = s.replace("APP_VERSION = '2.0.0'", "APP_VERSION = '2.0.4'")
 
           methods = """
           def _kill_stale_port(self):
@@ -125,9 +125,32 @@ jobs:
           compile(s2, str(core_path), 'exec')
           core_path.write_text(s2, encoding="utf-8")
 
-          # Launcher robusto: carga los módulos locales desde los recursos físicos
+          # Generar un bootstrap de imports reales para que PyInstaller vea
+          # automáticamente todas las dependencias usadas por los módulos dinámicos.
+          def top_imports(path):
+              tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+              mods = set()
+              for node in ast.walk(tree):
+                  if isinstance(node, ast.Import):
+                      for a in node.names:
+                          mods.add(a.name.split('.')[0])
+                  elif isinstance(node, ast.ImportFrom) and node.module:
+                      mods.add(node.module.split('.')[0])
+              return mods
+
+          modules = top_imports(core_path) | top_imports(root / "gui_local.py")
+          modules.discard("core_local")
+          modules.discard("gui_local")
+          lines = ["# Auto-generado para PyInstaller; no editar."]
+          for mod in sorted(modules):
+              if mod.isidentifier():
+                  lines.append(f"try:\n    import {mod}\nexcept Exception:\n    pass")
+          (root / "bootstrap_imports.py").write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+          # Launcher robusto: core_local y gui_local se empaquetan como recursos físicos.
           main_path = root / "main_local.py"
-          main = r'''import ctypes, importlib.util, os, sys, threading
+          main = r'''import bootstrap_imports
+          import ctypes, importlib.util, os, sys, threading
 
           _mutex = None
 
@@ -146,6 +169,19 @@ jobs:
               sys.modules[name] = module
               spec.loader.exec_module(module)
               return module
+
+          def _self_test():
+              _load_module('core_local')
+              _load_module('gui_local')
+              return 0
+
+          if '--self-test' in sys.argv:
+              try:
+                  sys.exit(_self_test())
+              except Exception:
+                  import traceback
+                  traceback.print_exc()
+                  sys.exit(2)
 
           C = _load_module('core_local')
           G = _load_module('gui_local')
@@ -176,9 +212,6 @@ jobs:
                   )
 
           if __name__ == '__main__':
-              if '--self-test' in sys.argv:
-                  # Si core_local y gui_local cargaron, el empaquetado está correcto.
-                  sys.exit(0)
               if not single_instance():
                   sys.exit(0)
               app = G.App()
@@ -198,12 +231,12 @@ jobs:
 
           iss_path = root / "installer.iss"
           t = iss_path.read_text(encoding="utf-8")
-          t = t.replace('#define MyAppVersion "2.0.0"', '#define MyAppVersion "2.0.3"')
+          t = t.replace('#define MyAppVersion "2.0.0"', '#define MyAppVersion "2.0.4"')
           t = t.replace(
               'OutputBaseFilename=MonopolioMultiBotDesktop_Setup_v2.0.0',
-              'OutputBaseFilename=MonopolioMultiBotDesktop_Setup_v2.0.3'
+              'OutputBaseFilename=MonopolioMultiBotDesktop_Setup_v2.0.4'
           )
-          t = t.replace('VersionInfoVersion=2.0.0.0', 'VersionInfoVersion=2.0.3.0')
+          t = t.replace('VersionInfoVersion=2.0.0.0', 'VersionInfoVersion=2.0.4.0')
 
           install_line = 'Filename: "{cmd}"; Parameters: "/C taskkill /F /IM MonopolioMultiBotHub.exe >nul 2>&1"; Flags: runhidden waituntilterminated'
           if 'Parameters: "/C taskkill /F /IM wuzapi.exe >nul 2>&1"; Flags: runhidden waituntilterminated' not in t:
@@ -229,8 +262,8 @@ jobs:
                   "  Exec(ExpandConstant('{cmd}'), '/C taskkill /F /IM wuzapi.exe >nul 2>&1', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);"
               )
           iss_path.write_text(t, encoding="utf-8")
-          '@ | Set-Content patch_v203.py -Encoding UTF8
-          python patch_v203.py
+          '@ | Set-Content patch_v204.py -Encoding UTF8
+          python patch_v204.py
 
       - name: Setup Python
         uses: actions/setup-python@v5
@@ -284,7 +317,7 @@ jobs:
         shell: powershell
         run: |
           Set-Location "$env:GITHUB_WORKSPACE\pc_local\buildsrc"
-          pyinstaller --clean --onefile --noconsole --name MonopolioMultiBotDesktop --icon app.ico --hidden-import tkinter --hidden-import tkinter.ttk --hidden-import tkinter.messagebox --hidden-import tkinter.filedialog --hidden-import tkinter.simpledialog --hidden-import pystray --hidden-import PIL --hidden-import PIL.Image --hidden-import PIL.ImageDraw --hidden-import PIL.ImageFont --add-binary "wuzapi.exe;." --add-data "app.ico;." --add-data "core_local.py;." --add-data "gui_local.py;." main_local.py
+          pyinstaller --clean --onefile --noconsole --name MonopolioMultiBotDesktop --icon app.ico --paths "." --hidden-import bootstrap_imports --add-binary "wuzapi.exe;." --add-data "app.ico;." --add-data "core_local.py;." --add-data "gui_local.py;." main_local.py
           Get-Item dist\MonopolioMultiBotDesktop.exe
 
       - name: Verify packaged modules
@@ -293,10 +326,26 @@ jobs:
           Set-Location "$env:GITHUB_WORKSPACE\pc_local\buildsrc"
           pyi-archive_viewer -l ".\dist\MonopolioMultiBotDesktop.exe" | Out-File ".\archive_contents.txt" -Encoding utf8
           $listing = Get-Content ".\archive_contents.txt" -Raw
-          if ($listing -notmatch "core_local.py") { throw "core_local.py no quedó dentro del ejecutable" }
-          if ($listing -notmatch "gui_local.py") { throw "gui_local.py no quedó dentro del ejecutable" }
-          if ($listing -notmatch "wuzapi.exe") { throw "wuzapi.exe no quedó dentro del ejecutable" }
-          Write-Host "Verificación OK: core_local.py, gui_local.py y wuzapi.exe están dentro del ejecutable."
+          foreach ($required in @("core_local.py","gui_local.py","wuzapi.exe","json")) {
+            if ($listing -notmatch [regex]::Escape($required)) {
+              throw "$required no quedó dentro del ejecutable"
+            }
+          }
+          Write-Host "Verificación de archivo OK."
+
+      - name: Runtime self-test
+        shell: powershell
+        run: |
+          Set-Location "$env:GITHUB_WORKSPACE\pc_local\buildsrc"
+          $p = Start-Process -FilePath ".\dist\MonopolioMultiBotDesktop.exe" -ArgumentList "--self-test" -PassThru
+          if (-not $p.WaitForExit(20000)) {
+            try { Stop-Process -Id $p.Id -Force } catch {}
+            throw "El self-test del ejecutable superó 20 segundos."
+          }
+          if ($p.ExitCode -ne 0) {
+            throw "El self-test del ejecutable falló. ExitCode=$($p.ExitCode)"
+          }
+          Write-Host "Runtime self-test OK."
 
       - name: Install Inno Setup
         shell: powershell
@@ -307,12 +356,12 @@ jobs:
         run: |
           Set-Location "$env:GITHUB_WORKSPACE\pc_local\buildsrc"
           & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" installer.iss
-          Get-Item output\MonopolioMultiBotDesktop_Setup_v2.0.3.exe
-          Get-FileHash output\MonopolioMultiBotDesktop_Setup_v2.0.3.exe -Algorithm SHA256 | Format-List
+          Get-Item output\MonopolioMultiBotDesktop_Setup_v2.0.4.exe
+          Get-FileHash output\MonopolioMultiBotDesktop_Setup_v2.0.4.exe -Algorithm SHA256 | Format-List
 
       - name: Upload installer
         uses: actions/upload-artifact@v4
         with:
-          name: MonopolioMultiBotDesktop-Windows-v2.0.3
-          path: pc_local/buildsrc/output/MonopolioMultiBotDesktop_Setup_v2.0.3.exe
+          name: MonopolioMultiBotDesktop-Windows-v2.0.4
+          path: pc_local/buildsrc/output/MonopolioMultiBotDesktop_Setup_v2.0.4.exe
           retention-days: 30
