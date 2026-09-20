@@ -121,8 +121,7 @@ ensure_google_account_column()
 '''
 migration=textwrap.dedent(migration)
 if "def ensure_google_account_column" not in s:
-    anchor="ensure_google_contact_columns()
-"
+    anchor="ensure_google_contact_columns()\n"
     if anchor not in s:
         raise SystemExit("No se encontró ensure_google_contact_columns")
     s=s.replace(anchor,anchor+"\n"+migration+"\n",1)
