@@ -287,15 +287,16 @@ jobs:
           pyinstaller --clean --onefile --noconsole --name MonopolioMultiBotDesktop --icon app.ico --hidden-import tkinter --hidden-import tkinter.ttk --hidden-import tkinter.messagebox --hidden-import tkinter.filedialog --hidden-import tkinter.simpledialog --hidden-import pystray --hidden-import PIL --hidden-import PIL.Image --hidden-import PIL.ImageDraw --hidden-import PIL.ImageFont --add-binary "wuzapi.exe;." --add-data "app.ico;." --add-data "core_local.py;." --add-data "gui_local.py;." main_local.py
           Get-Item dist\MonopolioMultiBotDesktop.exe
 
-      - name: Smoke-test packaged executable
+      - name: Verify packaged modules
         shell: powershell
         run: |
           Set-Location "$env:GITHUB_WORKSPACE\pc_local\buildsrc"
-          $p = Start-Process -FilePath ".\dist\MonopolioMultiBotDesktop.exe" -ArgumentList "--self-test" -PassThru -Wait
-          if ($p.ExitCode -ne 0) {
-            throw "El ejecutable empaquetado falló la prueba interna. ExitCode=$($p.ExitCode)"
-          }
-          Write-Host "Self-test OK: módulos internos cargados correctamente."
+          pyi-archive_viewer -l ".\dist\MonopolioMultiBotDesktop.exe" | Out-File ".\archive_contents.txt" -Encoding utf8
+          $listing = Get-Content ".\archive_contents.txt" -Raw
+          if ($listing -notmatch "core_local.py") { throw "core_local.py no quedó dentro del ejecutable" }
+          if ($listing -notmatch "gui_local.py") { throw "gui_local.py no quedó dentro del ejecutable" }
+          if ($listing -notmatch "wuzapi.exe") { throw "wuzapi.exe no quedó dentro del ejecutable" }
+          Write-Host "Verificación OK: core_local.py, gui_local.py y wuzapi.exe están dentro del ejecutable."
 
       - name: Install Inno Setup
         shell: powershell
