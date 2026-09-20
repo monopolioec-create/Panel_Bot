@@ -27,6 +27,10 @@ jobs:
           $b64 = Get-Content pc_hub\source.b64 -Raw
           [IO.File]::WriteAllBytes("pc_hub\source.zip",[Convert]::FromBase64String($b64))
           Expand-Archive -Force pc_hub\source.zip pc_hub\buildsrc
+          $raw = [IO.File]::ReadAllBytes("pc_hub\buildsrc\hub.py")
+          $utf8 = New-Object System.Text.UTF8Encoding($false,$true)
+          try { $text = $utf8.GetString($raw) } catch { $text = [Text.Encoding]::GetEncoding(1252).GetString($raw) }
+          [IO.File]::WriteAllText("pc_hub\buildsrc\hub.py",$text,(New-Object System.Text.UTF8Encoding($false)))
 
       - name: Setup Python
         uses: actions/setup-python@v5
