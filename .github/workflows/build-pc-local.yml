@@ -209,7 +209,7 @@ jobs:
 
           s2, n = re.subn(
               r"def media_url\(mid\):\n.*?(?=\n\n\ndef schedules_for\(pid\):)",
-              media_helpers.rstrip(),
+              lambda _m: media_helpers.rstrip(),
               s2,
               count=1,
               flags=re.S
@@ -358,7 +358,7 @@ jobs:
 
           s2, n = re.subn(
               r"    def action_media_url\(self,a\):\n.*?(?=\n    def on_webhook\(self,pid,raw\):)",
-              action_block.rstrip(),
+              lambda _m: action_block.rstrip(),
               s2,
               count=1,
               flags=re.S
