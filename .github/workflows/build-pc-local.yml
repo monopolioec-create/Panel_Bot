@@ -1570,7 +1570,7 @@ jobs:
           '@ | Set-Content test_templates_v209.py -Encoding UTF8
           python test_templates_v209.py
 
-      - name: Internal v2.1.0 interface and status tests
+      - name: Internal v2.1.1 interface and regression tests
         shell: powershell
         run: |
           Set-Location "$env:GITHUB_WORKSPACE"
@@ -1644,12 +1644,12 @@ jobs:
         run: |
           Set-Location "$env:GITHUB_WORKSPACE\pc_local\buildsrc"
           & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" installer.iss
-          Get-Item output\MonopolioMultiBotDesktop_Setup_v2.1.0.exe
-          Get-FileHash output\MonopolioMultiBotDesktop_Setup_v2.1.0.exe -Algorithm SHA256 | Format-List
+          Get-Item output\MonopolioMultiBotDesktop_Setup_v2.1.1.exe
+          Get-FileHash output\MonopolioMultiBotDesktop_Setup_v2.1.1.exe -Algorithm SHA256 | Format-List
 
       - name: Upload installer
         uses: actions/upload-artifact@v4
         with:
-          name: MonopolioMultiBotDesktop-Windows-v2.1.0
-          path: pc_local/buildsrc/output/MonopolioMultiBotDesktop_Setup_v2.1.0.exe
+          name: MonopolioMultiBotDesktop-Windows-v2.1.1
+          path: pc_local/buildsrc/output/MonopolioMultiBotDesktop_Setup_v2.1.1.exe
           retention-days: 30
