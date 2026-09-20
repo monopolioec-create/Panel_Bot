@@ -140,7 +140,7 @@ public class MainActivity extends Activity {
             }
         });
 
-        TextView version=title("Versión 0.7.0",12);
+        TextView version=title("Versión 0.8.0",12);
         version.setGravity(Gravity.CENTER_HORIZONTAL);
         version.setTextColor(Color.GRAY);
         l.addView(version);
