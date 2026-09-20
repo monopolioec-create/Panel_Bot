@@ -1,0 +1,42 @@
+name: Build WuzAPI Linux Server
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/build-wuzapi-linux.yml'
+
+permissions:
+  contents: read
+
+env:
+  WUZAPI_COMMIT: 5f0350f3af2abf6900739cc8e23b55700510451d
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Go 1.26
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.26.0'
+      - name: Compile Linux amd64
+        shell: bash
+        run: |
+          set -euxo pipefail
+          git clone https://github.com/asternic/wuzapi.git /tmp/wuzapi
+          cd /tmp/wuzapi
+          git checkout "$WUZAPI_COMMIT"
+          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags='-s -w' -o /tmp/wuzapi-linux-amd64 .
+          file /tmp/wuzapi-linux-amd64
+          chmod +x /tmp/wuzapi-linux-amd64
+          sha256sum /tmp/wuzapi-linux-amd64 > /tmp/wuzapi-linux-amd64.sha256
+      - name: Upload server binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: wuzapi-linux-amd64
+          path: |
+            /tmp/wuzapi-linux-amd64
+            /tmp/wuzapi-linux-amd64.sha256
+          retention-days: 30
