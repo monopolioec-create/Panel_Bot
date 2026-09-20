@@ -1,4 +1,4 @@
-name: Inspect PC Local Media Code
+name: Inspect PC Local Contacts Integration
 
 on:
   workflow_dispatch:
@@ -14,11 +14,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Decode source and inspect media functions
+      - name: Decode source and inspect database and GUI
         shell: bash
         run: |
           python - <<'PY'
-          import base64, glob, pathlib, zipfile, re, os
+          import base64, glob, pathlib, zipfile, re
           parts=[]
           for p in sorted(glob.glob('pc_local/source.part*')):
               s=pathlib.Path(p).read_text().strip()
@@ -28,16 +28,24 @@ jobs:
           pathlib.Path('/tmp/source.zip').write_bytes(base64.b64decode(''.join(parts)))
           with zipfile.ZipFile('/tmp/source.zip') as z:
               z.extractall('/tmp/src')
-          c=pathlib.Path('/tmp/src/core_local.py').read_text(encoding='utf-8')
-          print('=== MEDIA ENDPOINT REFERENCES ===')
-          for m in re.finditer(r'.{0,300}/chat/send/(?:image|video|audio|document).{0,600}', c, re.S):
-              print(m.group(0))
-              print('\n---\n')
-          print('=== FUNCTIONS WITH MEDIA/FILE/ACTION ===')
-          lines=c.splitlines()
-          for i,line in enumerate(lines):
-              if re.search(r'^\s*def\s+.*(?:media|file|action|send)', line, re.I):
-                  print(f'## line {i+1}: {line}')
-                  print('\n'.join(lines[i:i+90]))
-                  print('\n---\n')
+          for fn in ['core_local.py','gui_local.py']:
+              c=pathlib.Path('/tmp/src/'+fn).read_text(encoding='utf-8')
+              lines=c.splitlines()
+              print('\n==========',fn,'==========')
+              for i,line in enumerate(lines):
+                  if (
+                      'CREATE TABLE' in line or
+                      re.search(r'def .*action',line,re.I) or
+                      re.search(r'def .*rule',line,re.I) or
+                      re.search(r'def .*media',line,re.I) or
+                      re.search(r'def .*tab',line,re.I) or
+                      'Combobox' in line or
+                      'contact' in line.lower() or
+                      'buttons' in line.lower() or
+                      'location' in line.lower() or
+                      'sticker' in line.lower()
+                  ):
+                      print(f'\n### line {i+1}: {line}')
+                      print('\n'.join(lines[max(0,i-10):min(len(lines),i+85)]))
+                      print('\n---')
           PY
