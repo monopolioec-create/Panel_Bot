@@ -91,14 +91,14 @@ contact_end=s.find("\ndef update_contact(",contact_start)
 if contact_start<0 or contact_end<0:
     raise SystemExit("No se encontró save_customer_contact")
 contact_block=s[contact_start:contact_end]
-phone_line="    phone=normalize_contact_phone(phone)\\n"
+phone_line="    phone=normalize_contact_phone(phone)\n"
 if phone_line not in contact_block:
     raise SystemExit("No se encontró normalización de teléfono en save_customer_contact")
 if "El identificador recibido no parece un número telefónico válido." not in contact_block:
     contact_block=contact_block.replace(
         phone_line,
-        phone_line+"    if phone and (len(phone)<7 or len(phone)>15):\\n"
-                  +"        raise RuntimeError('El identificador recibido no parece un número telefónico válido.')\\n",
+        phone_line+"    if phone and (len(phone)<7 or len(phone)>15):\n"
+                  +"        raise RuntimeError('El identificador recibido no parece un número telefónico válido.')\n",
         1
     )
 s=s[:contact_start]+contact_block+s[contact_end:]
