@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
   push:
     paths:
-      - 'pc_local/source.b64'
+      - 'pc_local/source.part*'
       - '.github/workflows/build-pc-local.yml'
 
 permissions:
@@ -24,7 +24,10 @@ jobs:
         shell: powershell
         run: |
           New-Item -ItemType Directory -Force pc_local\buildsrc | Out-Null
-          $b64 = Get-Content pc_local\source.b64 -Raw
+          $parts = Get-ChildItem "pc_local\source.part*" | Sort-Object Name
+          if ($parts.Count -ne 5) { throw "Se esperaban 5 partes de fuente y se encontraron $($parts.Count)" }
+          $b64 = ""
+          foreach ($part in $parts) { $b64 += (Get-Content $part.FullName -Raw).Trim() }
           [IO.File]::WriteAllBytes("pc_local\source.zip",[Convert]::FromBase64String($b64))
           Expand-Archive -Force pc_local\source.zip pc_local\buildsrc
 
