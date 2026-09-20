@@ -45,7 +45,7 @@ jobs:
 
           core_path = root / "core_local.py"
           s = core_path.read_text(encoding="utf-8")
-          s = s.replace("APP_VERSION = '2.0.0'", "APP_VERSION = '2.0.4'")
+          s = s.replace("APP_VERSION = '2.0.0'", "APP_VERSION = '2.0.5'")
 
           methods = """
           def _kill_stale_port(self):
@@ -122,6 +122,256 @@ jobs:
           )
           if n != 1:
               raise SystemExit("No se pudo reemplazar WuzAPI.start")
+          compile(s2, str(core_path), 'exec')
+          core_path.write_text(s2, encoding="utf-8")
+
+          # Corrección multimedia v2.0.5:
+          # WuzAPI bloquea URLs 127.0.0.1 en su cliente HTTP seguro (protección SSRF).
+          # Los archivos locales se envían como data: URI con MIME real.
+          s2 = core_path.read_text(encoding="utf-8")
+          s2 = s2.replace(
+              "import json, os, re, secrets, shutil, sqlite3, subprocess, sys, threading, time, urllib.error, urllib.parse, urllib.request, uuid, zipfile",
+              "import base64, json, mimetypes, os, re, secrets, shutil, sqlite3, subprocess, sys, threading, time, urllib.error, urllib.parse, urllib.request, uuid, zipfile"
+          )
+
+          media_helpers = r'''def media_url(mid):
+              m=q('SELECT * FROM media WHERE id=?',(mid,),one=True)
+              if not m: return ''
+              return f"http://127.0.0.1:{LOCAL_PORT}/media/{int(mid)}/{urllib.parse.quote(Path(m['path']).name)}"
+
+          def media_record(mid):
+              m=q('SELECT * FROM media WHERE id=?',(int(mid),),one=True)
+              if not m:
+                  raise RuntimeError('Archivo de la biblioteca no encontrado')
+              p=Path(m['path'])
+              if not p.exists() or not p.is_file():
+                  raise RuntimeError(f"El archivo ya no existe en disco: {m.get('name') or p.name}")
+              return m
+
+          def media_mime(mid):
+              m=media_record(mid)
+              p=Path(m['path'])
+              suffix=p.suffix.lower()
+              overrides={
+                  '.jpg':'image/jpeg','.jpeg':'image/jpeg','.png':'image/png',
+                  '.webp':'image/webp','.gif':'image/gif',
+                  '.mp4':'video/mp4','.m4v':'video/mp4','.mov':'video/quicktime',
+                  '.webm':'video/webm',
+                  '.mp3':'audio/mpeg','.wav':'audio/wav','.m4a':'audio/mp4',
+                  '.ogg':'audio/ogg','.oga':'audio/ogg','.aac':'audio/aac',
+                  '.flac':'audio/flac',
+                  '.pdf':'application/pdf',
+                  '.txt':'text/plain',
+                  '.zip':'application/zip',
+                  '.doc':'application/msword',
+                  '.docx':'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+              }
+              if suffix in overrides:
+                  return overrides[suffix]
+              guessed,_=mimetypes.guess_type(m.get('name') or p.name)
+              if guessed:
+                  return guessed
+              head=p.read_bytes()[:32]
+              if head.startswith(b'\x89PNG\r\n\x1a\n'): return 'image/png'
+              if head.startswith(b'\xff\xd8\xff'): return 'image/jpeg'
+              if head.startswith((b'GIF87a',b'GIF89a')): return 'image/gif'
+              if head.startswith(b'%PDF-'): return 'application/pdf'
+              if head.startswith(b'ID3') or head[:2] in (b'\xff\xfb',b'\xff\xf3',b'\xff\xf2'): return 'audio/mpeg'
+              if head.startswith(b'OggS'): return 'audio/ogg'
+              if head.startswith(b'fLaC'): return 'audio/flac'
+              if head.startswith(b'RIFF') and head[8:12]==b'WAVE': return 'audio/wav'
+              if len(head)>=12 and head[4:8]==b'ftyp': return 'video/mp4'
+              return 'application/octet-stream'
+
+          def media_name(mid):
+              m=media_record(mid)
+              return str(m.get('name') or Path(m['path']).name)
+
+          def media_data_uri(mid, expected_kind=''):
+              m=media_record(mid)
+              p=Path(m['path'])
+              mime=media_mime(mid)
+              expected=(expected_kind or '').lower()
+              if expected=='image' and not mime.startswith('image/'):
+                  raise RuntimeError(f"El archivo {media_name(mid)} no es una imagen válida")
+              if expected=='video' and not mime.startswith('video/'):
+                  raise RuntimeError(f"El archivo {media_name(mid)} no es un video válido")
+              if expected=='audio' and not mime.startswith('audio/'):
+                  raise RuntimeError(f"El archivo {media_name(mid)} no es un audio válido")
+              try:
+                  raw=p.read_bytes()
+              except MemoryError:
+                  raise RuntimeError('El archivo es demasiado grande para prepararlo en memoria')
+              encoded=base64.b64encode(raw).decode('ascii')
+              return f"data:{mime};base64,{encoded}"
+          '''
+          media_helpers = textwrap.dedent(media_helpers)
+
+          s2, n = re.subn(
+              r"def media_url\(mid\):\n.*?(?=\n\n\ndef schedules_for\(pid\):)",
+              media_helpers.rstrip(),
+              s2,
+              count=1,
+              flags=re.S
+          )
+          if n != 1:
+              raise SystemExit("No se pudo parchear helpers de multimedia")
+
+          action_block = r'''    def action_media_value(self,a,kind=''):
+              if a.get('media_id'):
+                  return media_data_uri(int(a['media_id']), kind)
+              return str(a.get('url') or '')
+
+          def action_media_mime(self,a):
+              if a.get('media_id'):
+                  return media_mime(int(a['media_id']))
+              return str(a.get('mime_type') or '')
+
+          def action_media_name(self,a):
+              if a.get('file_name'):
+                  return str(a.get('file_name'))
+              if a.get('media_id'):
+                  return media_name(int(a['media_id']))
+              return 'archivo'
+
+          def execute_action(self,pid,token,route,phone,name,msg,a,rule_name,started):
+              delay=int(a.get('delay_ms') or 0)
+              if delay>0:
+                  time.sleep(min(delay,3600000)/1000)
+              typ=str(a.get('type','')).lower().strip()
+              text=self.vars(a.get('text',a.get('caption','')),phone,name,msg)
+
+              if typ=='text':
+                  path='/chat/send/text'
+                  payload={'Phone':route,'Body':text}
+                  timeout=90
+
+              elif typ=='image':
+                  media=self.action_media_value(a,'image')
+                  if not media: raise RuntimeError('La acción de imagen no tiene archivo ni URL')
+                  path='/chat/send/image'
+                  payload={'Phone':route,'Image':media,'Caption':text}
+                  mime=self.action_media_mime(a)
+                  if mime: payload['MimeType']=mime
+                  timeout=180
+
+              elif typ=='video':
+                  media=self.action_media_value(a,'video')
+                  if not media: raise RuntimeError('La acción de video no tiene archivo ni URL')
+                  path='/chat/send/video'
+                  payload={'Phone':route,'Video':media,'Caption':text}
+                  mime=self.action_media_mime(a)
+                  if mime: payload['MimeType']=mime
+                  timeout=360
+
+              elif typ=='audio':
+                  media=self.action_media_value(a,'audio')
+                  if not media: raise RuntimeError('La acción de audio no tiene archivo ni URL')
+                  path='/chat/send/audio'
+                  payload={'Phone':route,'Audio':media,'PTT':False}
+                  mime=self.action_media_mime(a)
+                  if mime: payload['mimetype']=mime
+                  timeout=300
+
+              elif typ=='document':
+                  media=self.action_media_value(a,'')
+                  if not media: raise RuntimeError('La acción de documento no tiene archivo ni URL')
+                  path='/chat/send/document'
+                  payload={
+                      'Phone':route,
+                      'Document':media,
+                      'FileName':self.action_media_name(a),
+                      'Caption':text
+                  }
+                  mime=self.action_media_mime(a)
+                  if mime: payload['MimeType']=mime
+                  timeout=360
+
+              elif typ=='sticker':
+                  media=self.action_media_value(a,'image')
+                  if not media: raise RuntimeError('La acción de sticker no tiene archivo ni URL')
+                  path='/chat/send/sticker'
+                  payload={'Phone':route,'Sticker':media}
+                  mime=self.action_media_mime(a)
+                  if mime: payload['MimeType']=mime
+                  timeout=180
+
+              elif typ=='location':
+                  path='/chat/send/location'
+                  payload={
+                      'Phone':route,
+                      'Latitude':float(a.get('lat') or 0),
+                      'Longitude':float(a.get('lng') or 0),
+                      'Name':a.get('name') or 'Ubicación'
+                  }
+                  timeout=90
+
+              elif typ=='contact':
+                  n=str(a.get('name') or 'Contacto')
+                  num=str(a.get('number') or '')
+                  path='/chat/send/contact'
+                  payload={
+                      'Phone':route,
+                      'Name':n,
+                      'Vcard':f'BEGIN:VCARD\nVERSION:3.0\nFN:{n}\nTEL;TYPE=CELL:{num}\nEND:VCARD'
+                  }
+                  timeout=90
+
+              elif typ=='buttons':
+                  path='/chat/send/buttons'
+                  payload={
+                      'Phone':route,
+                      'Body':text,
+                      'Title':a.get('title',''),
+                      'Footer':a.get('footer',''),
+                      'Buttons':a.get('buttons',[])
+                  }
+                  if a.get('image_media_id'):
+                      payload['Image']=media_data_uri(int(a['image_media_id']),'image')
+                  elif a.get('image_url'):
+                      payload['Image']=a['image_url']
+                  timeout=180
+
+              elif typ=='list':
+                  path='/chat/send/list'
+                  payload={
+                      'Phone':route,
+                      'Desc':text,
+                      'TopText':a.get('title',''),
+                      'FooterText':a.get('footer',''),
+                      'ButtonText':a.get('button_text') or 'Ver opciones',
+                      'Sections':a.get('sections',[])
+                  }
+                  timeout=90
+
+              else:
+                  raise RuntimeError(f'Acción no soportada: {typ}')
+
+              c,j=WUZ.call(token,'POST',path,payload,timeout)
+              if c>=300 or (isinstance(j,dict) and j.get('success') is False):
+                  err=(j.get('error') if isinstance(j,dict) else str(j)) or str(j)
+                  raise RuntimeError(f'Error enviando {typ}: HTTP {c} · {err}')
+              log(pid,'info',f'Respuesta enviada en {int((time.perf_counter()-started)*1000)} ms · {rule_name} · {typ}')
+          '''
+          action_block = textwrap.dedent(action_block)
+          action_block = textwrap.indent(action_block, "    ")
+
+          s2, n = re.subn(
+              r"    def action_media_url\(self,a\):\n.*?(?=\n    def on_webhook\(self,pid,raw\):)",
+              action_block.rstrip(),
+              s2,
+              count=1,
+              flags=re.S
+          )
+          if n != 1:
+              raise SystemExit("No se pudo parchear execute_action multimedia")
+
+          # Servidor local: conservar MIME correcto para vista previa/diagnóstico.
+          s2 = s2.replace(
+              "self.send_response(200); self.send_header('Content-Type','application/octet-stream');self.send_header('Content-Length',str(size));self.end_headers()",
+              "self.send_response(200); self.send_header('Content-Type',media_mime(mid));self.send_header('Content-Length',str(size));self.end_headers()"
+          )
+
           compile(s2, str(core_path), 'exec')
           core_path.write_text(s2, encoding="utf-8")
 
@@ -234,12 +484,12 @@ jobs:
 
           iss_path = root / "installer.iss"
           t = iss_path.read_text(encoding="utf-8")
-          t = t.replace('#define MyAppVersion "2.0.0"', '#define MyAppVersion "2.0.4"')
+          t = t.replace('#define MyAppVersion "2.0.0"', '#define MyAppVersion "2.0.5"')
           t = t.replace(
               'OutputBaseFilename=MonopolioMultiBotDesktop_Setup_v2.0.0',
-              'OutputBaseFilename=MonopolioMultiBotDesktop_Setup_v2.0.4'
+              'OutputBaseFilename=MonopolioMultiBotDesktop_Setup_v2.0.5'
           )
-          t = t.replace('VersionInfoVersion=2.0.0.0', 'VersionInfoVersion=2.0.4.0')
+          t = t.replace('VersionInfoVersion=2.0.0.0', 'VersionInfoVersion=2.0.5.0')
 
           install_line = 'Filename: "{cmd}"; Parameters: "/C taskkill /F /IM MonopolioMultiBotHub.exe >nul 2>&1"; Flags: runhidden waituntilterminated'
           if 'Parameters: "/C taskkill /F /IM wuzapi.exe >nul 2>&1"; Flags: runhidden waituntilterminated' not in t:
@@ -265,8 +515,8 @@ jobs:
                   "  Exec(ExpandConstant('{cmd}'), '/C taskkill /F /IM wuzapi.exe >nul 2>&1', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);"
               )
           iss_path.write_text(t, encoding="utf-8")
-          '@ | Set-Content patch_v204.py -Encoding UTF8
-          python patch_v204.py
+          '@ | Set-Content patch_v205.py -Encoding UTF8
+          python patch_v205.py
 
       - name: Setup Python
         uses: actions/setup-python@v5
@@ -296,6 +546,97 @@ jobs:
           Set-Location "$env:GITHUB_WORKSPACE\pc_local\buildsrc"
           python -m pip install --upgrade pip
           pip install -r requirements.txt pyinstaller
+
+      - name: Internal media payload tests
+        shell: powershell
+        run: |
+          Set-Location "$env:GITHUB_WORKSPACE\pc_local\buildsrc"
+          @'
+          import base64, importlib.util, pathlib, tempfile, time
+          from PIL import Image
+
+          spec=importlib.util.spec_from_file_location("core_local_test","core_local.py")
+          C=importlib.util.module_from_spec(spec)
+          spec.loader.exec_module(C)
+
+          td=pathlib.Path(tempfile.mkdtemp(prefix="multibot-media-test-"))
+
+          # Archivos de prueba representativos.
+          png=td/"test.png"
+          Image.new("RGB",(4,4),(20,140,80)).save(png,"PNG")
+          mp4=td/"test.mp4"
+          mp4.write_bytes(b"\x00\x00\x00\x18ftypmp42\x00\x00\x00\x00mp42isom" + b"0"*128)
+          pdf=td/"test.pdf"
+          pdf.write_bytes(b"%PDF-1.4\n1 0 obj<</Type/Catalog>>endobj\n%%EOF\n")
+          mp3=td/"test.mp3"
+          mp3.write_bytes(b"ID3\x04\x00\x00\x00\x00\x00\x00" + b"0"*128)
+          wav=td/"test.wav"
+          wav.write_bytes(b"RIFF" + (36).to_bytes(4,"little") + b"WAVEfmt " + b"0"*32)
+
+          ids={}
+          for kind,p in [("image",png),("video",mp4),("pdf",pdf),("audio",mp3),("wav",wav)]:
+              ids[kind]=C.add_media(str(p))
+
+          expected={
+              "image":("image","data:image/png;base64,",png.read_bytes()),
+              "video":("video","data:video/mp4;base64,",mp4.read_bytes()),
+              "pdf":("", "data:application/pdf;base64,",pdf.read_bytes()),
+              "audio":("audio","data:audio/mpeg;base64,",mp3.read_bytes()),
+              "wav":("audio","data:audio/wav;base64,",wav.read_bytes()),
+          }
+          for key,(kind,prefix,raw) in expected.items():
+              uri=C.media_data_uri(ids[key],kind)
+              assert uri.startswith(prefix),(key,uri[:80])
+              decoded=base64.b64decode(uri.split(",",1)[1])
+              assert decoded==raw,key
+
+          captured=[]
+          def fake_call(token,method,path,body=None,timeout=60):
+              captured.append((path,body,timeout))
+              return 200,{"success":True,"data":{"Details":"Sent"}}
+          C.WUZ.call=fake_call
+          eng=C.Engine()
+          common=dict(pid="test",token="tok",route="573000000000@s.whatsapp.net",phone="573000000000",name="Test",msg="hola",rule_name="Prueba",started=time.perf_counter())
+
+          actions=[
+              {"type":"image","media_id":ids["image"],"text":"foto"},
+              {"type":"video","media_id":ids["video"],"text":"video"},
+              {"type":"document","media_id":ids["pdf"],"text":"pdf"},
+              {"type":"audio","media_id":ids["audio"]},
+          ]
+          for a in actions:
+              eng.execute_action(a=a,**common)
+
+          assert captured[0][0]=="/chat/send/image"
+          assert captured[0][1]["Image"].startswith("data:image/png;base64,")
+          assert captured[0][1]["MimeType"]=="image/png"
+
+          assert captured[1][0]=="/chat/send/video"
+          assert captured[1][1]["Video"].startswith("data:video/mp4;base64,")
+          assert captured[1][1]["MimeType"]=="video/mp4"
+          assert captured[1][2]>=300
+
+          assert captured[2][0]=="/chat/send/document"
+          assert captured[2][1]["Document"].startswith("data:application/pdf;base64,")
+          assert captured[2][1]["MimeType"]=="application/pdf"
+          assert captured[2][1]["FileName"]=="test.pdf"
+
+          assert captured[3][0]=="/chat/send/audio"
+          assert captured[3][1]["Audio"].startswith("data:audio/mpeg;base64,")
+          assert captured[3][1]["mimetype"]=="audio/mpeg"
+          assert captured[3][1]["PTT"] is False
+
+          # Una URL pública sigue enviándose como URL y no se convierte a data URI.
+          captured.clear()
+          eng.execute_action(
+              a={"type":"image","url":"https://example.com/test.jpg","text":"url"},
+              **common
+          )
+          assert captured[0][1]["Image"]=="https://example.com/test.jpg"
+
+          print("MEDIA TESTS OK: image, video, PDF/document, MP3/WAV audio, public URL")
+          '@ | Set-Content test_media_v205.py -Encoding UTF8
+          python test_media_v205.py
 
       - name: Generate application icon
         shell: powershell
@@ -365,12 +706,12 @@ jobs:
         run: |
           Set-Location "$env:GITHUB_WORKSPACE\pc_local\buildsrc"
           & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" installer.iss
-          Get-Item output\MonopolioMultiBotDesktop_Setup_v2.0.4.exe
-          Get-FileHash output\MonopolioMultiBotDesktop_Setup_v2.0.4.exe -Algorithm SHA256 | Format-List
+          Get-Item output\MonopolioMultiBotDesktop_Setup_v2.0.5.exe
+          Get-FileHash output\MonopolioMultiBotDesktop_Setup_v2.0.5.exe -Algorithm SHA256 | Format-List
 
       - name: Upload installer
         uses: actions/upload-artifact@v4
         with:
-          name: MonopolioMultiBotDesktop-Windows-v2.0.4
-          path: pc_local/buildsrc/output/MonopolioMultiBotDesktop_Setup_v2.0.4.exe
+          name: MonopolioMultiBotDesktop-Windows-v2.0.5
+          path: pc_local/buildsrc/output/MonopolioMultiBotDesktop_Setup_v2.0.5.exe
           retention-days: 30
