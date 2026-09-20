@@ -5,12 +5,24 @@ import org.json.*;
 import java.text.SimpleDateFormat;
 import java.util.*;
 import java.util.regex.Pattern;
+import java.util.concurrent.*;
 
 public class RuleEngine {
     private final Context c; private final WuzApiManager wuz; private final PanelClient panel;
-    public RuleEngine(Context c,WuzApiManager w){this.c=c.getApplicationContext();this.wuz=w;this.panel=new PanelClient(this.c);}
+    private final ThreadPoolExecutor logQueue;
+    public RuleEngine(Context c,WuzApiManager w){
+        this.c=c.getApplicationContext();
+        this.wuz=w;
+        this.panel=new PanelClient(this.c);
+        this.logQueue=new ThreadPoolExecutor(
+            1,1,0L,TimeUnit.MILLISECONDS,
+            new ArrayBlockingQueue<Runnable>(100),
+            new ThreadPoolExecutor.DiscardOldestPolicy()
+        );
+    }
 
     public void onWebhook(String raw){
+        final long receivedAt=android.os.SystemClock.elapsedRealtime();
         try{
             JSONObject root=new JSONObject(raw);
 
@@ -95,7 +107,7 @@ public class RuleEngine {
                 return;
             }
 
-            boolean matched=executeRules(route,phone,name,msg);
+            boolean matched=executeRules(route,phone,name,msg,receivedAt);
             if(!matched) safeLog("info","Mensaje recibido sin regla coincidente: \\\""+shortText(msg,100)+"\\\"");
         }catch(Exception e){
             safeLog("error","Error procesando webhook: "+e.getMessage());
@@ -156,7 +168,7 @@ public class RuleEngine {
     private String nested(JSONObject o,String a,String b){JSONObject x=o.optJSONObject(a);return x==null?"":x.optString(b,"");}
     private String first(String...s){for(String x:s)if(x!=null&&!x.isEmpty())return x;return "";}
 
-    private boolean executeRules(String route,String phone,String name,String msg)throws Exception{
+    private boolean executeRules(String route,String phone,String name,String msg,long receivedAt)throws Exception{
         String raw=Prefs.get(c,"rules_json","[]"); JSONArray rs=new JSONArray(raw);
         if(rs.length()==0){
             safeLog("warn","No hay reglas sincronizadas todavía en la APK.");
@@ -168,7 +180,7 @@ public class RuleEngine {
             String ruleName=r.optString("name","Regla");
             safeLog("info","Regla coincidente: "+ruleName+" · mensaje \\\""+shortText(msg,80)+"\\\"");
             JSONArray a=r.optJSONArray("actions");
-            if(a!=null)for(int k=0;k<a.length();k++)executeAction(route,phone,name,msg,a.getJSONObject(k),ruleName);
+            if(a!=null)for(int k=0;k<a.length();k++)executeAction(route,phone,name,msg,a.getJSONObject(k),ruleName,receivedAt);
             if(r.optBoolean("stop_after",true))return true;
         }
         return false;
@@ -204,7 +216,7 @@ public class RuleEngine {
         }
     }
 
-    private void executeAction(String route,String phone,String name,String msg,JSONObject a,String ruleName)throws Exception{
+    private void executeAction(String route,String phone,String name,String msg,JSONObject a,String ruleName,long receivedAt)throws Exception{
         long delay=a.optLong("delay_ms",0);if(delay>0)Thread.sleep(Math.min(delay,3600000));
         String type=a.optString("type","");
         String text=vars(a.optString("text",a.optString("caption","")),phone,name,msg);
@@ -223,7 +235,8 @@ public class RuleEngine {
             }
             Prefs.put(c,"last_reply_at",String.valueOf(System.currentTimeMillis()));
             Prefs.put(c,"last_reply_to",phone);
-            safeLog("info","Respuesta enviada · regla "+ruleName+" · tipo "+type+" · a "+(phone.isEmpty()?route:phone));
+            long elapsed=android.os.SystemClock.elapsedRealtime()-receivedAt;
+            safeLog("info","Respuesta enviada en "+elapsed+" ms · regla "+ruleName+" · tipo "+type+" · a "+(phone.isEmpty()?route:phone));
         }catch(Exception e){
             safeLog("error","Error enviando respuesta · regla "+ruleName+" · "+e.getMessage());
             throw e;
@@ -232,9 +245,12 @@ public class RuleEngine {
 
     private void safeLog(String level,String message){
         android.util.Log.i("RuleEngine",level+": "+message);
-        if(panel.linked()){
-            try{panel.log(level,message);}catch(Exception ignored){}
-        }
+        if(!panel.linked())return;
+        try{
+            logQueue.execute(()->{
+                try{panel.log(level,message);}catch(Exception ignored){}
+            });
+        }catch(Exception ignored){}
     }
 
     public String executeJob(JSONObject job)throws Exception{
