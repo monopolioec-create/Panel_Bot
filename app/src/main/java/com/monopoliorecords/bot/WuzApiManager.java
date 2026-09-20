@@ -21,7 +21,6 @@ public class WuzApiManager {
         Map<String,String> e=pb.environment();
         String admin=Prefs.get(c,"wuz_admin",""); if(admin.isEmpty()){admin=Prefs.randomHex(16);Prefs.put(c,"wuz_admin",admin);}
         e.put("WUZAPI_ADMIN_TOKEN",admin);
-        e.put("WUZAPI_GLOBAL_WEBHOOK","http://127.0.0.1:1821");
         e.put("WEBHOOK_FORMAT","json"); e.put("WUZAPI_PORT","8080"); e.put("TZ","America/Bogota");
         process=pb.start();
         new Thread(() -> {
@@ -176,5 +175,19 @@ public class WuzApiManager {
     public HttpJson.Result sendSticker(String phone,String data)throws Exception{return post("/chat/send/sticker",new JSONObject().put("Phone",phone).put("Sticker",data));}
     public HttpJson.Result sendLocation(String phone,double lat,double lng,String name)throws Exception{return post("/chat/send/location",new JSONObject().put("Phone",phone).put("Latitude",lat).put("Longitude",lng).put("Name",name));}
     public HttpJson.Result sendContact(String phone,String name,String number)throws Exception{return post("/chat/send/contact",new JSONObject().put("Phone",phone).put("Name",name).put("Vcard","BEGIN:VCARD\\nVERSION:3.0\\nFN:"+name+"\\nTEL;TYPE=CELL:"+number+"\\nEND:VCARD"));}
+    public HttpJson.Result sendButtons(String phone,String body,String title,String footer,String image,JSONArray buttons)throws Exception{
+        JSONObject b=new JSONObject().put("Phone",phone).put("Body",body).put("Buttons",buttons);
+        if(title!=null&&!title.isEmpty())b.put("Title",title);
+        if(footer!=null&&!footer.isEmpty())b.put("Footer",footer);
+        if(image!=null&&!image.isEmpty())b.put("Image",image);
+        return post("/chat/send/buttons",b);
+    }
+    public HttpJson.Result sendList(String phone,String body,String title,String footer,String buttonText,JSONArray sections)throws Exception{
+        JSONObject b=new JSONObject().put("Phone",phone).put("Desc",body).put("Sections",sections);
+        b.put("ButtonText",(buttonText==null||buttonText.isEmpty())?"Ver opciones":buttonText);
+        if(title!=null&&!title.isEmpty())b.put("TopText",title);
+        if(footer!=null&&!footer.isEmpty())b.put("FooterText",footer);
+        return post("/chat/send/list",b);
+    }
     public HttpJson.Result setTextStatus(String text)throws Exception{return post("/status/set/text",new JSONObject().put("Text",text));}
 }
