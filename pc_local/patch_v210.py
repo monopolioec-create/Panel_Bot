@@ -78,7 +78,7 @@ def delete_schedule(sid):
 '''
 schedule_helpers = textwrap.dedent(schedule_helpers)
 s, n = re.subn(
-    r"def schedules_for\(pid\):.*?(?=\n\n\ndef recent_logs\(pid=None,limit=400\):)",
+    r"def schedules_for\(pid\):.*?def delete_schedule\(sid\):\s*x\('DELETE FROM schedules WHERE id=\?',\(sid,\)\)",
     lambda _m: schedule_helpers.rstrip(),
     s,
     count=1,
