@@ -13,7 +13,7 @@ iss_path = root / "installer.iss"
 # CORE
 # ---------------------------------------------------------------------------
 s = core_path.read_text(encoding="utf-8")
-s = s.replace("APP_VERSION = '2.0.9'", "APP_VERSION = '2.1.0'")
+s = s.replace("APP_VERSION = '2.0.9'", "APP_VERSION = '2.1.1'")
 
 # Add media_id to scheduled WhatsApp status posts without breaking existing DBs.
 migration_anchor = "ensure_google_contact_columns()\n"
@@ -984,7 +984,7 @@ media_methods = r'''
 media_methods=textwrap.dedent(media_methods)
 media_methods=textwrap.indent(media_methods,"    ")
 g, n = re.subn(
-    r"    def build_media\(self\):.*?(?=\n    def build_contacts\(self\):)",
+    r"    def build_media\(self\):.*?(?=\n    def refresh_google_contacts_status\(self\):|\n    def build_contacts\(self\):)",
     lambda _m:media_methods.rstrip(),
     g,
     count=1,
@@ -1347,5 +1347,5 @@ gui_path.write_text(g, encoding="utf-8")
 
 # Installer version.
 t=iss_path.read_text(encoding="utf-8")
-t=t.replace("2.0.9","2.1.0")
+t=t.replace("2.0.9","2.1.1")
 iss_path.write_text(t,encoding="utf-8")
