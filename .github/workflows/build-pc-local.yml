@@ -37,66 +37,200 @@ jobs:
           }
           [IO.File]::WriteAllBytes("pc_local\source.zip",[Convert]::FromBase64String($b64))
           Expand-Archive -Force pc_local\source.zip pc_local\buildsrc
-          @'
-          import pathlib, re
 
-          core_path = pathlib.Path(r"pc_local\buildsrc\core_local.py")
+          @'
+          import pathlib, re, textwrap
+
+          root = pathlib.Path(r"pc_local\buildsrc")
+
+          core_path = root / "core_local.py"
           s = core_path.read_text(encoding="utf-8")
-          s = s.replace("APP_VERSION = '2.0.0'", "APP_VERSION = '2.0.2'")
-          new_block = """    def _kill_stale_port(self):
-              if os.name != 'nt': return
+          s = s.replace("APP_VERSION = '2.0.0'", "APP_VERSION = '2.0.3'")
+
+          methods = """
+          def _kill_stale_port(self):
+              if os.name != 'nt':
+                  return
               try:
-                  flags=getattr(subprocess,'CREATE_NO_WINDOW',0)
-                  r=subprocess.run(['netstat','-ano','-p','tcp'],capture_output=True,text=True,errors='ignore',creationflags=flags,timeout=8)
-                  pids=set()
+                  flags = getattr(subprocess, 'CREATE_NO_WINDOW', 0)
+                  r = subprocess.run(
+                      ['netstat','-ano','-p','tcp'],
+                      capture_output=True, text=True, errors='ignore',
+                      creationflags=flags, timeout=8
+                  )
+                  pids = set()
                   for line in (r.stdout or '').splitlines():
-                      cols=line.split()
+                      cols = line.split()
                       if len(cols) >= 4 and cols[0].upper() == 'TCP':
-                          local=cols[1]
-                          pid=cols[-1]
-                          if pid.isdigit() and local.endswith(':'+str(WUZ_PORT)) and (local.startswith('127.0.0.1:') or local.startswith('0.0.0.0:') or local.startswith('[::]:')):
+                          local = cols[1]
+                          pid = cols[-1]
+                          if pid.isdigit() and local.endswith(':' + str(WUZ_PORT)) and (
+                              local.startswith('127.0.0.1:') or
+                              local.startswith('0.0.0.0:') or
+                              local.startswith('[::]:')
+                          ):
                               pids.add(pid)
                   for pid in pids:
-                      subprocess.run(['taskkill','/F','/PID',pid],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,creationflags=flags,timeout=8)
-                  if pids: time.sleep(1.0)
+                      subprocess.run(
+                          ['taskkill','/F','/PID',pid],
+                          stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                          creationflags=flags, timeout=8
+                      )
+                  if pids:
+                      time.sleep(1.0)
               except Exception:
                   pass
 
-              def start(self):
-                  with self.lock:
-                      if self.process and self.process.poll() is None: return
-                      if not os.path.exists(self.exe): raise RuntimeError('No se encontró el motor interno WuzAPI.')
-                      self._kill_stale_port()
-                      env = os.environ.copy(); env['WUZAPI_ADMIN_TOKEN'] = CFG['admin_token']; env['WEBHOOK_FORMAT']='json'; env['TZ']='America/Bogota'
-                      args=[self.exe,'-skipmedia','-logtype','json','-address','127.0.0.1','-port',str(WUZ_PORT),'-osname',APP_NAME,'-datadir',str(WUZ_DIR),'-admintoken',CFG['admin_token']]
-                      flags=getattr(subprocess,'CREATE_NO_WINDOW',0)
-                      self.process=subprocess.Popen(args,cwd=str(WUZ_DIR),env=env,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,creationflags=flags)
-                  self.wait_ready(30)
-                  code,_=self.admin('GET','/admin/users')
-                  if code == 401:
-                      raise RuntimeError('El motor local rechazó la clave administrativa. Reinicia la aplicación para recuperar la sesión.')
+          def start(self):
+              with self.lock:
+                  if self.process and self.process.poll() is None:
+                      return
+                  if not os.path.exists(self.exe):
+                      raise RuntimeError('No se encontró el motor interno WuzAPI.')
+                  self._kill_stale_port()
+                  env = os.environ.copy()
+                  env['WUZAPI_ADMIN_TOKEN'] = CFG['admin_token']
+                  env['WEBHOOK_FORMAT'] = 'json'
+                  env['TZ'] = 'America/Bogota'
+                  args = [
+                      self.exe, '-skipmedia', '-logtype', 'json',
+                      '-address', '127.0.0.1', '-port', str(WUZ_PORT),
+                      '-osname', APP_NAME, '-datadir', str(WUZ_DIR),
+                      '-admintoken', CFG['admin_token']
+                  ]
+                  flags = getattr(subprocess, 'CREATE_NO_WINDOW', 0)
+                  self.process = subprocess.Popen(
+                      args, cwd=str(WUZ_DIR), env=env,
+                      stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                      creationflags=flags
+                  )
+              self.wait_ready(30)
+              code, _ = self.admin('GET', '/admin/users')
+              if code == 401:
+                  raise RuntimeError(
+                      'El motor local rechazó la clave administrativa. '
+                      'Cierra la aplicación y vuelve a abrirla.'
+                  )
           """
-          new_block = re.sub(r'^              ', '', new_block, flags=re.M)
-          s2, n = re.subn(r"    def start\(self\):\n.*?(?=\n    def stop\(self\):)", new_block.rstrip(), s, count=1, flags=re.S)
+          methods = textwrap.indent(textwrap.dedent(methods).strip() + "\n", "    ")
+          s2, n = re.subn(
+              r"    def start\(self\):\n.*?(?=\n    def stop\(self\):)",
+              methods.rstrip(),
+              s,
+              count=1,
+              flags=re.S
+          )
           if n != 1:
-              raise SystemExit("No se pudo parchear WuzAPI.start")
+              raise SystemExit("No se pudo reemplazar WuzAPI.start")
+          compile(s2, str(core_path), 'exec')
           core_path.write_text(s2, encoding="utf-8")
 
-          iss_path = pathlib.Path(r"pc_local\buildsrc\installer.iss")
+          # Launcher robusto: carga los módulos locales desde los recursos físicos
+          main_path = root / "main_local.py"
+          main = r'''import ctypes, importlib.util, os, sys, threading
+
+          _mutex = None
+
+          def _resource(name):
+              base = getattr(sys, '_MEIPASS', os.path.dirname(os.path.abspath(sys.argv[0])))
+              return os.path.join(base, name)
+
+          def _load_module(name):
+              path = _resource(name + '.py')
+              if not os.path.exists(path):
+                  raise RuntimeError('Falta el componente interno ' + name + '.py')
+              spec = importlib.util.spec_from_file_location(name, path)
+              if spec is None or spec.loader is None:
+                  raise RuntimeError('No se pudo cargar el componente interno ' + name)
+              module = importlib.util.module_from_spec(spec)
+              sys.modules[name] = module
+              spec.loader.exec_module(module)
+              return module
+
+          C = _load_module('core_local')
+          G = _load_module('gui_local')
+
+          def single_instance():
+              global _mutex
+              try:
+                  _mutex = ctypes.windll.kernel32.CreateMutexW(
+                      None, False, 'MonopolioMultiBotDesktop_v2_Mutex'
+                  )
+                  return ctypes.windll.kernel32.GetLastError() != 183
+              except Exception:
+                  return True
+
+          def start_services(app):
+              try:
+                  C.start_services()
+                  C.log('', 'info', 'Motor local iniciado correctamente')
+              except Exception as e:
+                  C.log('', 'error', f'No se pudo iniciar el motor: {e}')
+                  from tkinter import messagebox
+                  app.after(
+                      0,
+                      lambda: messagebox.showerror(
+                          C.APP_NAME,
+                          f'No se pudo iniciar el motor de WhatsApp:\n\n{e}'
+                      )
+                  )
+
+          if __name__ == '__main__':
+              if '--self-test' in sys.argv:
+                  # Si core_local y gui_local cargaron, el empaquetado está correcto.
+                  sys.exit(0)
+              if not single_instance():
+                  sys.exit(0)
+              app = G.App()
+              threading.Thread(
+                  target=start_services,
+                  args=(app,),
+                  daemon=True,
+                  name='services'
+              ).start()
+              if '--background' in sys.argv:
+                  app.withdraw()
+              app.mainloop()
+          '''
+          main = textwrap.dedent(main)
+          compile(main, str(main_path), 'exec')
+          main_path.write_text(main, encoding='utf-8')
+
+          iss_path = root / "installer.iss"
           t = iss_path.read_text(encoding="utf-8")
-          t = t.replace('#define MyAppVersion "2.0.0"', '#define MyAppVersion "2.0.2"')
-          t = t.replace('OutputBaseFilename=MonopolioMultiBotDesktop_Setup_v2.0.0', 'OutputBaseFilename=MonopolioMultiBotDesktop_Setup_v2.0.2')
-          t = t.replace('VersionInfoVersion=2.0.0.0', 'VersionInfoVersion=2.0.2.0')
-          line = 'Filename: "{cmd}"; Parameters: "/C taskkill /F /IM MonopolioMultiBotHub.exe >nul 2>&1"; Flags: runhidden waituntilterminated'
-          if 'taskkill /F /IM wuzapi.exe' not in t:
-              t = t.replace(line, line + '\nFilename: "{cmd}"; Parameters: "/C taskkill /F /IM wuzapi.exe >nul 2>&1"; Flags: runhidden waituntilterminated')
-              uline = 'Filename: "{cmd}"; Parameters: "/C taskkill /F /IM {#MyAppExeName} >nul 2>&1"; Flags: runhidden waituntilterminated; RunOnceId: "StopMultiBotDesktop"'
-              t = t.replace(uline, uline + '\nFilename: "{cmd}"; Parameters: "/C taskkill /F /IM wuzapi.exe >nul 2>&1"; Flags: runhidden waituntilterminated; RunOnceId: "StopWuzAPI"')
-              needle = "  Exec(ExpandConstant('{cmd}'), '/C taskkill /F /IM MonopolioMultiBotHub.exe >nul 2>&1', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);"
-              t = t.replace(needle, needle + "\n  Exec(ExpandConstant('{cmd}'), '/C taskkill /F /IM wuzapi.exe >nul 2>&1', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);")
+          t = t.replace('#define MyAppVersion "2.0.0"', '#define MyAppVersion "2.0.3"')
+          t = t.replace(
+              'OutputBaseFilename=MonopolioMultiBotDesktop_Setup_v2.0.0',
+              'OutputBaseFilename=MonopolioMultiBotDesktop_Setup_v2.0.3'
+          )
+          t = t.replace('VersionInfoVersion=2.0.0.0', 'VersionInfoVersion=2.0.3.0')
+
+          install_line = 'Filename: "{cmd}"; Parameters: "/C taskkill /F /IM MonopolioMultiBotHub.exe >nul 2>&1"; Flags: runhidden waituntilterminated'
+          if 'Parameters: "/C taskkill /F /IM wuzapi.exe >nul 2>&1"; Flags: runhidden waituntilterminated' not in t:
+              t = t.replace(
+                  install_line,
+                  install_line + '\n' +
+                  'Filename: "{cmd}"; Parameters: "/C taskkill /F /IM wuzapi.exe >nul 2>&1"; Flags: runhidden waituntilterminated'
+              )
+
+          uninstall_line = 'Filename: "{cmd}"; Parameters: "/C taskkill /F /IM {#MyAppExeName} >nul 2>&1"; Flags: runhidden waituntilterminated; RunOnceId: "StopMultiBotDesktop"'
+          if 'RunOnceId: "StopWuzAPI"' not in t:
+              t = t.replace(
+                  uninstall_line,
+                  uninstall_line + '\n' +
+                  'Filename: "{cmd}"; Parameters: "/C taskkill /F /IM wuzapi.exe >nul 2>&1"; Flags: runhidden waituntilterminated; RunOnceId: "StopWuzAPI"'
+              )
+
+          prep = "  Exec(ExpandConstant('{cmd}'), '/C taskkill /F /IM MonopolioMultiBotHub.exe >nul 2>&1', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);"
+          if "taskkill /F /IM wuzapi.exe >nul 2>&1', '', SW_HIDE" not in t:
+              t = t.replace(
+                  prep,
+                  prep + "\n" +
+                  "  Exec(ExpandConstant('{cmd}'), '/C taskkill /F /IM wuzapi.exe >nul 2>&1', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);"
+              )
           iss_path.write_text(t, encoding="utf-8")
-          '@ | Set-Content patch_v201.py -Encoding UTF8
-          python patch_v201.py
+          '@ | Set-Content patch_v203.py -Encoding UTF8
+          python patch_v203.py
 
       - name: Setup Python
         uses: actions/setup-python@v5
@@ -150,8 +284,18 @@ jobs:
         shell: powershell
         run: |
           Set-Location "$env:GITHUB_WORKSPACE\pc_local\buildsrc"
-          pyinstaller --clean --onefile --noconsole --name MonopolioMultiBotDesktop --icon app.ico --paths "." --hidden-import core_local --hidden-import gui_local --collect-submodules core_local --collect-submodules gui_local --add-binary "wuzapi.exe;." --add-data "app.ico;." main_local.py
+          pyinstaller --clean --onefile --noconsole --name MonopolioMultiBotDesktop --icon app.ico --hidden-import tkinter --hidden-import tkinter.ttk --hidden-import tkinter.messagebox --hidden-import tkinter.filedialog --hidden-import tkinter.simpledialog --hidden-import pystray --hidden-import PIL --hidden-import PIL.Image --hidden-import PIL.ImageDraw --hidden-import PIL.ImageFont --add-binary "wuzapi.exe;." --add-data "app.ico;." --add-data "core_local.py;." --add-data "gui_local.py;." main_local.py
           Get-Item dist\MonopolioMultiBotDesktop.exe
+
+      - name: Smoke-test packaged executable
+        shell: powershell
+        run: |
+          Set-Location "$env:GITHUB_WORKSPACE\pc_local\buildsrc"
+          $p = Start-Process -FilePath ".\dist\MonopolioMultiBotDesktop.exe" -ArgumentList "--self-test" -PassThru -Wait
+          if ($p.ExitCode -ne 0) {
+            throw "El ejecutable empaquetado falló la prueba interna. ExitCode=$($p.ExitCode)"
+          }
+          Write-Host "Self-test OK: módulos internos cargados correctamente."
 
       - name: Install Inno Setup
         shell: powershell
@@ -162,12 +306,12 @@ jobs:
         run: |
           Set-Location "$env:GITHUB_WORKSPACE\pc_local\buildsrc"
           & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" installer.iss
-          Get-Item output\MonopolioMultiBotDesktop_Setup_v2.0.2.exe
-          Get-FileHash output\MonopolioMultiBotDesktop_Setup_v2.0.2.exe -Algorithm SHA256 | Format-List
+          Get-Item output\MonopolioMultiBotDesktop_Setup_v2.0.3.exe
+          Get-FileHash output\MonopolioMultiBotDesktop_Setup_v2.0.3.exe -Algorithm SHA256 | Format-List
 
       - name: Upload installer
         uses: actions/upload-artifact@v4
         with:
-          name: MonopolioMultiBotDesktop-Windows-v2.0.2
-          path: pc_local/buildsrc/output/MonopolioMultiBotDesktop_Setup_v2.0.2.exe
+          name: MonopolioMultiBotDesktop-Windows-v2.0.3
+          path: pc_local/buildsrc/output/MonopolioMultiBotDesktop_Setup_v2.0.3.exe
           retention-days: 30
