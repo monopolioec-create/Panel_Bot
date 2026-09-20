@@ -896,38 +896,37 @@ jobs:
           s = core_path.read_text(encoding="utf-8")
           s = s.replace("APP_VERSION = '2.0.7'", "APP_VERSION = '2.0.8'")
 
-          old_existing = """    if existing:
-              final_name=str(existing.get('name') or '') or name
-              final_label=str(existing.get('label') or '') or label
-              final_note=str(existing.get('note') or '') or note
-              x(
-                  'UPDATE contacts SET name=?,label=?,note=?,last_seen=?,last_message=?,last_rule=?,'
-                  'interactions=interactions+1 WHERE id=?',
-                  (final_name,final_label,final_note,now,message,rule_name,int(existing['id']))
-              )
-              return int(existing['id']), False"""
-          new_existing = """    if existing:
-              return int(existing['id']), False"""
-          if old_existing not in s:
-              raise SystemExit("No se encontró la lógica anterior de contacto duplicado")
-          s = s.replace(old_existing,new_existing,1)
+          duplicate_pattern = (
+              r"(    existing=q\('SELECT \* FROM contacts WHERE profile_id=\? AND phone=\?',"
+              r"\(profile_id,phone\),one=True\)\n)"
+              r"    if existing:\n.*?(?=    cid=x\()"
+          )
+          duplicate_replacement = (
+              r"\1"
+              "    if existing:\n"
+              "        return int(existing['id']), False\n"
+          )
+          s, n = re.subn(duplicate_pattern,duplicate_replacement,s,count=1,flags=re.S)
+          if n != 1:
+              raise SystemExit("No se pudo convertir duplicados a modo OMITIR")
 
-          old_action = """            cid,created=save_customer_contact(pid,resolved_phone,display_name,label,note,msg,rule_name)
-              log(pid,'info',f"Contacto {'guardado' if created else 'actualizado'} · {display_name} · {resolved_phone} · ID {cid}")
-              if google_status(pid).get('connected'):
-                  google_sync_contact_async(cid)
-              return"""
-          new_action = """            cid,created=save_customer_contact(pid,resolved_phone,display_name,label,note,msg,rule_name)
-              if not created:
-                  log(pid,'info',f"Contacto omitido por duplicado · {resolved_phone} · ID {cid}")
-                  return
-              log(pid,'info',f"Contacto guardado · {display_name} · {resolved_phone} · ID {cid}")
-              if google_status(pid).get('connected'):
-                  google_sync_contact_async(cid)
-              return"""
-          if old_action not in s:
-              raise SystemExit("No se encontró acción save_contact v2.0.7")
-          s = s.replace(old_action,new_action,1)
+          action_pattern = (
+              r"(            cid,created=save_customer_contact\(pid,resolved_phone,display_name,label,note,msg,rule_name\)\n)"
+              r".*?(?=\n        if typ=='text':)"
+          )
+          action_replacement = (
+              r"\1"
+              "            if not created:\n"
+              "                log(pid,'info',f\"Contacto omitido por duplicado · {resolved_phone} · ID {cid}\")\n"
+              "                return\n"
+              "            log(pid,'info',f\"Contacto guardado · {display_name} · {resolved_phone} · ID {cid}\")\n"
+              "            if google_status(pid).get('connected'):\n"
+              "                google_sync_contact_async(cid)\n"
+              "            return"
+          )
+          s, n = re.subn(action_pattern,action_replacement,s,count=1,flags=re.S)
+          if n != 1:
+              raise SystemExit("No se pudo actualizar la acción save_contact a modo OMITIR")
 
           compile(s,str(core_path),'exec')
           core_path.write_text(s,encoding='utf-8')
