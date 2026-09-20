@@ -27,7 +27,14 @@ jobs:
           $parts = Get-ChildItem "pc_local\source.part*" | Sort-Object Name
           if ($parts.Count -ne 5) { throw "Se esperaban 5 partes de fuente y se encontraron $($parts.Count)" }
           $b64 = ""
-          foreach ($part in $parts) { $b64 += (Get-Content $part.FullName -Raw).Trim() }
+          foreach ($part in $parts) {
+            $piece = (Get-Content $part.FullName -Raw).Trim()
+            if ($part.Name -ne "source.part04") {
+              if ($piece.Length -lt 6000) { throw "Parte incompleta: $($part.Name)" }
+              $piece = $piece.Substring(0,6000)
+            }
+            $b64 += $piece
+          }
           [IO.File]::WriteAllBytes("pc_local\source.zip",[Convert]::FromBase64String($b64))
           Expand-Archive -Force pc_local\source.zip pc_local\buildsrc
 
