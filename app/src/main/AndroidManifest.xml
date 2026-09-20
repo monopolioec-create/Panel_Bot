@@ -10,7 +10,8 @@
         android:allowBackup="false"
         android:usesCleartextTraffic="true"
         android:extractNativeLibs="true"
-        android:icon="@drawable/ic_bot"
+        android:icon="@drawable/ic_mr_logo"
+        android:roundIcon="@drawable/ic_mr_logo"
         android:label="Monopoly Records Bot"
         android:theme="@android:style/Theme.Material.Light.NoActionBar">
 
@@ -21,10 +22,7 @@
             </intent-filter>
         </activity>
 
-        <service
-            android:name=".BotService"
-            android:exported="false"
-            android:stopWithTask="false" />
+        <service android:name=".BotService" android:exported="false" android:stopWithTask="false" />
 
         <receiver android:name=".BootReceiver" android:enabled="true" android:exported="true">
             <intent-filter>
