@@ -86,17 +86,22 @@ if old_resolved not in s:
 s=s.replace(old_resolved,new_resolved,1)
 
 # Extra safety in local contact storage.
-old_phone_check="""    phone=normalize_contact_phone(phone)
-    if not phone:
-        raise RuntimeError('No se pudo obtener el número del cliente para guardar el contacto.')"""
-new_phone_check="""    phone=normalize_contact_phone(phone)
-    if not phone:
-        raise RuntimeError('No se pudo obtener el número del cliente para guardar el contacto.')
-    if len(phone)<7 or len(phone)>15:
-        raise RuntimeError('El identificador recibido no parece un número telefónico válido.')"""
-if old_phone_check not in s:
-    raise SystemExit("No se encontró validación de save_customer_contact")
-s=s.replace(old_phone_check,new_phone_check,1)
+contact_start=s.find("def save_customer_contact(")
+contact_end=s.find("\ndef update_contact(",contact_start)
+if contact_start<0 or contact_end<0:
+    raise SystemExit("No se encontró save_customer_contact")
+contact_block=s[contact_start:contact_end]
+phone_line="    phone=normalize_contact_phone(phone)\\n"
+if phone_line not in contact_block:
+    raise SystemExit("No se encontró normalización de teléfono en save_customer_contact")
+if "El identificador recibido no parece un número telefónico válido." not in contact_block:
+    contact_block=contact_block.replace(
+        phone_line,
+        phone_line+"    if phone and (len(phone)<7 or len(phone)>15):\\n"
+                  +"        raise RuntimeError('El identificador recibido no parece un número telefónico válido.')\\n",
+        1
+    )
+s=s[:contact_start]+contact_block+s[contact_end:]
 
 # =========================================================
 # GOOGLE DESTINATION ACCOUNT
