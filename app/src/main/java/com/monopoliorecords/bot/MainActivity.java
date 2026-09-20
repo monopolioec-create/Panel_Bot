@@ -18,7 +18,7 @@ public class MainActivity extends Activity {
         ImageView logo=new ImageView(this);logo.setImageResource(R.drawable.ic_mr_logo);logo.setScaleType(ImageView.ScaleType.CENTER_INSIDE);
         LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(-1,dp(104));lp.setMargins(0,0,0,dp(2));l.addView(logo,lp);
 
-        TextView brand=title("MONOPOLY RECORDS BOT",25);brand.setGravity(Gravity.CENTER_HORIZONTAL);l.addView(brand);
+        TextView brand=title("MONOPOLIO RECORDS BOT",25);brand.setGravity(Gravity.CENTER_HORIZONTAL);l.addView(brand);
         TextView sub=title("Automatización de WhatsApp",17);sub.setGravity(Gravity.CENTER_HORIZONTAL);l.addView(sub);
         status=title("Estado: listo para configurar",15);l.addView(status);
 
@@ -74,7 +74,7 @@ public class MainActivity extends Activity {
         stop.setOnClickListener(v->{Prefs.putBool(this,"auto_start",false);stopService(new Intent(this,BotService.class));ui("Bot detenido");});
 
         TextView help=title("El bot trabaja mediante una notificación persistente de Android. No necesita abrir WhatsApp ni mover la pantalla.",14);l.addView(help);
-        TextView version=title("Versión 0.5.0",12);version.setGravity(Gravity.CENTER_HORIZONTAL);version.setTextColor(Color.GRAY);l.addView(version);
+        TextView version=title("Versión 0.6.0",12);version.setGravity(Gravity.CENTER_HORIZONTAL);version.setTextColor(Color.GRAY);l.addView(version);
         setContentView(sv);
     }
 
