@@ -11,8 +11,6 @@ on:
       - 'pc_local/test_v212.py'
       - 'pc_local/patch_v220.py'
       - 'pc_local/test_v220.py'
-      - 'pc_local/patch_v213.py'
-      - 'pc_local/test_v213.py'
       - '.github/workflows/build-pc-local.yml'
 
 permissions:
@@ -1271,7 +1269,6 @@ jobs:
           python pc_local\patch_v210.py pc_local\buildsrc
           python pc_local\patch_v212.py pc_local\buildsrc
           python pc_local\patch_v220.py pc_local\buildsrc
-          python pc_local\patch_v213.py pc_local\buildsrc
 
       - name: Setup Python
         uses: actions/setup-python@v5
@@ -1591,12 +1588,6 @@ jobs:
           Set-Location "$env:GITHUB_WORKSPACE"
           python pc_local\test_v212.py pc_local\buildsrc
 
-      - name: Internal v2.1.3 Tk and weekday tests
-        shell: powershell
-        run: |
-          Set-Location "$env:GITHUB_WORKSPACE"
-          python pc_local\test_v213.py pc_local\buildsrc
-
       - name: Internal v2.2.0 feature and regression tests
         shell: powershell
         run: |
@@ -1671,12 +1662,12 @@ jobs:
         run: |
           Set-Location "$env:GITHUB_WORKSPACE\pc_local\buildsrc"
           & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" installer.iss
-          Get-Item output\MonopolioMultiBotDesktop_Setup_v2.1.3.exe
-          Get-FileHash output\MonopolioMultiBotDesktop_Setup_v2.1.3.exe -Algorithm SHA256 | Format-List
+          Get-Item output\MonopolioMultiBotDesktop_Setup_v2.2.0.exe
+          Get-FileHash output\MonopolioMultiBotDesktop_Setup_v2.2.0.exe -Algorithm SHA256 | Format-List
 
       - name: Upload installer
         uses: actions/upload-artifact@v4
         with:
-          name: MonopolioMultiBotDesktop-Windows-v2.1.3
-          path: pc_local/buildsrc/output/MonopolioMultiBotDesktop_Setup_v2.1.3.exe
+          name: MonopolioMultiBotDesktop-Windows-v2.2.0
+          path: pc_local/buildsrc/output/MonopolioMultiBotDesktop_Setup_v2.2.0.exe
           retention-days: 30
