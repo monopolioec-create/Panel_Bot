@@ -884,6 +884,72 @@ jobs:
           '@ | Set-Content patch_google_v207.py -Encoding UTF8
           python patch_google_v207.py
 
+          @'
+          import pathlib, re
+
+          root = pathlib.Path(r"pc_local\buildsrc")
+          core_path = root / "core_local.py"
+          gui_path = root / "gui_local.py"
+          iss_path = root / "installer.iss"
+
+          # ---------- v2.0.8: duplicados = OMITIR, sin modificar nada ----------
+          s = core_path.read_text(encoding="utf-8")
+          s = s.replace("APP_VERSION = '2.0.7'", "APP_VERSION = '2.0.8'")
+
+          old_existing = """    if existing:
+              final_name=str(existing.get('name') or '') or name
+              final_label=str(existing.get('label') or '') or label
+              final_note=str(existing.get('note') or '') or note
+              x(
+                  'UPDATE contacts SET name=?,label=?,note=?,last_seen=?,last_message=?,last_rule=?,'
+                  'interactions=interactions+1 WHERE id=?',
+                  (final_name,final_label,final_note,now,message,rule_name,int(existing['id']))
+              )
+              return int(existing['id']), False"""
+          new_existing = """    if existing:
+              return int(existing['id']), False"""
+          if old_existing not in s:
+              raise SystemExit("No se encontró la lógica anterior de contacto duplicado")
+          s = s.replace(old_existing,new_existing,1)
+
+          old_action = """            cid,created=save_customer_contact(pid,resolved_phone,display_name,label,note,msg,rule_name)
+              log(pid,'info',f"Contacto {'guardado' if created else 'actualizado'} · {display_name} · {resolved_phone} · ID {cid}")
+              if google_status(pid).get('connected'):
+                  google_sync_contact_async(cid)
+              return"""
+          new_action = """            cid,created=save_customer_contact(pid,resolved_phone,display_name,label,note,msg,rule_name)
+              if not created:
+                  log(pid,'info',f"Contacto omitido por duplicado · {resolved_phone} · ID {cid}")
+                  return
+              log(pid,'info',f"Contacto guardado · {display_name} · {resolved_phone} · ID {cid}")
+              if google_status(pid).get('connected'):
+                  google_sync_contact_async(cid)
+              return"""
+          if old_action not in s:
+              raise SystemExit("No se encontró acción save_contact v2.0.7")
+          s = s.replace(old_action,new_action,1)
+
+          compile(s,str(core_path),'exec')
+          core_path.write_text(s,encoding='utf-8')
+
+          g = gui_path.read_text(encoding='utf-8')
+          g = g.replace(
+              "Si ya existe, se actualiza la última interacción sin duplicarlo.",
+              "Si ese número ya existe, se omite por completo: no se modifica ni se actualiza."
+          )
+          g = g.replace(
+              "No se duplican por número.",
+              "Los números que ya existen se omiten sin modificar el registro."
+          )
+          compile(g,str(gui_path),'exec')
+          gui_path.write_text(g,encoding='utf-8')
+
+          t=iss_path.read_text(encoding='utf-8')
+          t=t.replace('2.0.7','2.0.8')
+          iss_path.write_text(t,encoding='utf-8')
+          '@ | Set-Content patch_contacts_v208.py -Encoding UTF8
+          python patch_contacts_v208.py
+
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
@@ -1034,18 +1100,25 @@ jobs:
           assert row["interactions"]==1
           assert calls==[], "save_contact no debe llamar WuzAPI"
 
+          google_sync_calls=[]
+          C.google_status=lambda _pid: {"connected":True,"configured":True}
+          C.google_sync_contact_async=lambda cid: google_sync_calls.append(cid)
+
+          before=dict(C.contacts_for(pid)[0])
           eng.execute_action(
               pid=pid,token="dummy",route="573001112233@s.whatsapp.net",
-              phone="573001112233",name="Ana Cliente",msg="Segundo",
-              a={"type":"save_contact","contact_name":"@nombre","label":"Interesado"},
-              rule_name="Captura lead",started=time.perf_counter()
+              phone="573001112233",name="Nombre Distinto",msg="Segundo",
+              a={"type":"save_contact","contact_name":"Nombre Cambiado","label":"Otra etiqueta","note":"Otra nota"},
+              rule_name="Otra regla",started=time.perf_counter()
           )
           rows=C.contacts_for(pid)
           assert len(rows)==1, "No debe duplicar el mismo número"
-          assert rows[0]["interactions"]==2
-          assert rows[0]["last_message"]=="Segundo"
+          after=dict(rows[0])
+          for key in ["name","phone","label","note","first_seen","last_seen","last_message","last_rule","interactions"]:
+              assert after[key]==before[key], (key,before[key],after[key])
+          assert google_sync_calls==[], "Un duplicado omitido no debe volver a sincronizarse con Google"
 
-          print("CONTACT TESTS OK: save_contact + dedupe + counters")
+          print("CONTACT TESTS OK: nuevo se guarda + duplicado se omite sin modificar ningún dato")
           '@ | Set-Content test_contacts_v206.py -Encoding UTF8
           python test_contacts_v206.py
 
@@ -1169,12 +1242,12 @@ jobs:
         run: |
           Set-Location "$env:GITHUB_WORKSPACE\pc_local\buildsrc"
           & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" installer.iss
-          Get-Item output\MonopolioMultiBotDesktop_Setup_v2.0.7.exe
-          Get-FileHash output\MonopolioMultiBotDesktop_Setup_v2.0.7.exe -Algorithm SHA256 | Format-List
+          Get-Item output\MonopolioMultiBotDesktop_Setup_v2.0.8.exe
+          Get-FileHash output\MonopolioMultiBotDesktop_Setup_v2.0.8.exe -Algorithm SHA256 | Format-List
 
       - name: Upload installer
         uses: actions/upload-artifact@v4
         with:
-          name: MonopolioMultiBotDesktop-Windows-v2.0.7
-          path: pc_local/buildsrc/output/MonopolioMultiBotDesktop_Setup_v2.0.7.exe
+          name: MonopolioMultiBotDesktop-Windows-v2.0.8
+          path: pc_local/buildsrc/output/MonopolioMultiBotDesktop_Setup_v2.0.8.exe
           retention-days: 30
