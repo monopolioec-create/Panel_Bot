@@ -30,7 +30,7 @@ public class WuzApiManager {
                     Log.i("WuzAPI",l);
                     String low=l.toLowerCase(Locale.ROOT);
                     if(low.contains("\"level\":\"error\"") || low.contains(" failed ") || low.contains("\"error\"")){
-                        String clip=l.length()>500?l.substring(l.length()-500):l;
+                        String clip=l.length()>700?l.substring(l.length()-700):l;
                         Prefs.put(c,"wuz_last_error",clip);
                     }
                 }
@@ -40,9 +40,7 @@ public class WuzApiManager {
     }
 
     public synchronized void restart() throws Exception {
-        stop();
-        Thread.sleep(1200);
-        start();
+        stop(); Thread.sleep(1500); start();
     }
 
     public void waitReady(long timeoutMs) throws Exception {
@@ -85,9 +83,29 @@ public class WuzApiManager {
     private boolean waitConnected(long timeoutMs) throws Exception {
         long until=System.currentTimeMillis()+timeoutMs;
         while(System.currentTimeMillis()<until){
-            JSONObject s=status();
-            if(isConnected(s)) return true;
-            Thread.sleep(750);
+            if(isConnected(status())) return true;
+            Thread.sleep(600);
+        }
+        return false;
+    }
+
+    // WhatsMeow recomienda esperar el primer evento QR antes de PairPhone.
+    // WuzAPI persiste ese QR y lo expone en /session/qr.
+    private boolean waitPairingReady(long timeoutMs) throws Exception {
+        long until=System.currentTimeMillis()+timeoutMs;
+        while(System.currentTimeMillis()<until){
+            try{
+                HttpJson.Result rr=get("/session/qr");
+                if(rr.ok()){
+                    JSONObject j=rr.json();
+                    JSONObject d=j.optJSONObject("data"); if(d==null)d=j;
+                    String qr=d.optString("QRCode","");
+                    boolean passkey=d.optBoolean("passkeyPending",false);
+                    if(!qr.isEmpty() || passkey) return true;
+                }
+            }catch(Exception ignored){}
+            if(isLoggedIn(status())) return true;
+            Thread.sleep(400);
         }
         return false;
     }
@@ -105,18 +123,9 @@ public class WuzApiManager {
         waitReady(15000);
         if(isConnected(status())) return status();
         checkInternet();
-
-        JSONObject b=new JSONObject();
-        b.put("Subscribe",new JSONArray().put("Message"));
-        // Immediate=true evita el límite interno de 10 s de WuzAPI.
-        // La app hace su propia espera hasta que Connected=true.
-        b.put("Immediate",true);
+        JSONObject b=new JSONObject().put("Subscribe",new JSONArray().put("Message")).put("Immediate",true);
         HttpJson.Result r=post("/session/connect",b);
-
-        // Incluso si WuzAPI devuelve un error transitorio, el goroutine de conexión
-        // puede seguir trabajando; por eso esperamos el estado real.
         if(waitConnected(75000)) return status();
-
         String detail=Prefs.get(c,"wuz_last_error","");
         String base=(r.body==null?"":r.body);
         throw new IOException("No fue posible abrir la conexión con WhatsApp en 75 s"
@@ -126,33 +135,35 @@ public class WuzApiManager {
     public String pairPhone(String phone)throws Exception{
         String clean=phone==null?"":phone.replaceAll("[^0-9]","");
         if(clean.length()<8) throw new IOException("Número de WhatsApp inválido");
+        if(clean.startsWith("0")) throw new IOException("Usa el número internacional sin 0 inicial");
 
         waitReady(20000);
         if(!isConnected(status())) connect();
 
-        Exception last=null;
-        for(int attempt=1; attempt<=3; attempt++){
-            try{
-                if(!isConnected(status())){
-                    connect();
-                }
-                JSONObject b=new JSONObject().put("Phone",clean);
-                HttpJson.Result res=post("/session/pairphone",b);
-                JSONObject j=res.json();
-                JSONObject data=j.optJSONObject("data");
-                String code=data!=null?data.optString("LinkingCode",""):j.optString("LinkingCode","");
-                if(code.isEmpty()) code=j.optString("linkingCode","");
-                if(!code.isEmpty()) return code;
-
-                String err=j.optString("error",res.body==null?"":res.body);
-                last=new IOException(err.isEmpty()?"No se recibió código":err);
-                Thread.sleep(1500L*attempt);
-            }catch(Exception e){
-                last=e;
-                Thread.sleep(1500L*attempt);
-            }
+        // No solicitar el código hasta que WhatsApp haya entregado el primer
+        // estado de emparejamiento. Esto evita códigos creados demasiado pronto.
+        if(!waitPairingReady(20000)){
+            // La documentación indica que una pequeña espera también es válida.
+            Thread.sleep(1500);
         }
-        throw new IOException(last!=null?last.getMessage():"No fue posible generar el código de WhatsApp");
+
+        JSONObject b=new JSONObject().put("Phone",clean);
+        HttpJson.Result res=post("/session/pairphone",b);
+        JSONObject j=res.json();
+        JSONObject data=j.optJSONObject("data");
+        String code=data!=null?data.optString("LinkingCode",""):j.optString("LinkingCode","");
+        if(code.isEmpty()) code=j.optString("linkingCode","");
+        if(code.isEmpty()){
+            String err=j.optString("error",res.body==null?"":res.body);
+            throw new IOException(err.isEmpty()?"No se recibió código":err);
+        }
+
+        // Normaliza únicamente espacios; conserva el guion oficial.
+        code=code.trim().toUpperCase(Locale.ROOT).replace(" ","");
+        Prefs.put(c,"last_pair_code",code);
+        Prefs.put(c,"last_pair_phone",clean);
+        Prefs.put(c,"last_pair_time",String.valueOf(System.currentTimeMillis()));
+        return code;
     }
 
     public boolean loggedIn(){ return isLoggedIn(status()); }
