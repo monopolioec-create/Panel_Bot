@@ -20,45 +20,23 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Decode source
+      - name: Decode and patch source
         shell: powershell
         run: |
           New-Item -ItemType Directory -Force pc_hub\buildsrc | Out-Null
           $b64 = Get-Content pc_hub\source.b64 -Raw
           [IO.File]::WriteAllBytes("pc_hub\source.zip",[Convert]::FromBase64String($b64))
           Expand-Archive -Force pc_hub\source.zip pc_hub\buildsrc
-          $raw = [IO.File]::ReadAllBytes("pc_hub\buildsrc\hub.py")
-          $utf8 = New-Object System.Text.UTF8Encoding($false,$true)
-          try { $text = $utf8.GetString($raw) } catch { $text = [Text.Encoding]::GetEncoding(1252).GetString($raw) }
-          [IO.File]::WriteAllText("pc_hub\buildsrc\hub.py",$text,(New-Object System.Text.UTF8Encoding($false)))
 
           $hubPath = "pc_hub\buildsrc\hub.py"
-          $hub = Get-Content $hubPath -Raw
+          $raw = [IO.File]::ReadAllBytes($hubPath)
+          $utf8 = New-Object System.Text.UTF8Encoding($false,$true)
+          try { $hub = $utf8.GetString($raw) } catch { $hub = [Text.Encoding]::GetEncoding(1252).GetString($raw) }
           $hub = $hub.Replace('APP_VERSION = "1.0.0"', 'APP_VERSION = "1.0.1"')
-          $old = @'
-    def list_users(self):
-        code, j = self.admin("GET", "/admin/users")
-        return j if code == 200 and isinstance(j, list) else []
-'@
-          $new = @'
-    def list_users(self):
-        code, j = self.admin("GET", "/admin/users")
-        if code != 200:
-            return []
-        if isinstance(j, list):
-            return j
-        if isinstance(j, dict):
-            data = j.get("data")
-            if isinstance(data, list):
-                return data
-            if isinstance(data, dict):
-                users = data.get("users") or data.get("Users")
-                if isinstance(users, list):
-                    return users
-        return []
-'@
+          $old = "    def list_users(self):`n        code, j = self.admin(`"GET`", `"/admin/users`")`n        return j if code == 200 and isinstance(j, list) else []`n"
+          $new = "    def list_users(self):`n        code, j = self.admin(`"GET`", `"/admin/users`")`n        if code != 200:`n            return []`n        if isinstance(j, list):`n            return j`n        if isinstance(j, dict):`n            data = j.get(`"data`")`n            if isinstance(data, list):`n                return data`n            if isinstance(data, dict):`n                users = data.get(`"users`") or data.get(`"Users`")`n                if isinstance(users, list):`n                    return users`n        return []`n"
           if (-not $hub.Contains($old)) { throw "No se encontró bloque list_users para parchear" }
-          $hub = $hub.Replace($old, $new)
+          $hub = $hub.Replace($old,$new)
           [IO.File]::WriteAllText($hubPath,$hub,(New-Object System.Text.UTF8Encoding($false)))
 
           $issPath = "pc_hub\buildsrc\installer.iss"
@@ -114,6 +92,6 @@ jobs:
       - name: Upload Installer
         uses: actions/upload-artifact@v4
         with:
-          name: MonopolioMultiBotHub-Windows
+          name: MonopolioMultiBotHub-Windows-v1.0.1
           path: pc_hub/buildsrc/output/MonopolioMultiBotHub_Setup_v1.0.1.exe
           retention-days: 30
