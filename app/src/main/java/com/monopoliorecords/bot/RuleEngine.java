@@ -80,10 +80,10 @@ public class RuleEngine {
             Prefs.put(c,"last_message_at",String.valueOf(System.currentTimeMillis()));
             Prefs.put(c,"last_message_text",msg);
             Prefs.put(c,"last_message_from",phone);
-            safeLog("info","Mensaje recibido: ""+shortText(msg,100)+"" · de "+(phone.isEmpty()?route:phone));
+            safeLog("info","Mensaje recibido: \\\""+shortText(msg,100)+"\\\" · de "+(phone.isEmpty()?route:phone));
 
             boolean matched=executeRules(route,phone,name,msg);
-            if(!matched) safeLog("info","Mensaje recibido sin regla coincidente: ""+shortText(msg,100)+""");
+            if(!matched) safeLog("info","Mensaje recibido sin regla coincidente: \\\""+shortText(msg,100)+"\\\"");
         }catch(Exception e){
             safeLog("error","Error procesando webhook: "+e.getMessage());
             android.util.Log.e("RuleEngine","webhook",e);
@@ -136,7 +136,7 @@ public class RuleEngine {
             JSONObject r=rs.getJSONObject(i);
             if(!r.optBoolean("enabled",true)||!matches(r,msg))continue;
             String ruleName=r.optString("name","Regla");
-            safeLog("info","Regla coincidente: "+ruleName+" · mensaje ""+shortText(msg,80)+""");
+            safeLog("info","Regla coincidente: "+ruleName+" · mensaje \\\""+shortText(msg,80)+"\\\"");
             JSONArray a=r.optJSONArray("actions");
             if(a!=null)for(int k=0;k<a.length();k++)executeAction(route,phone,name,msg,a.getJSONObject(k),ruleName);
             if(r.optBoolean("stop_after",true))return true;
