@@ -58,7 +58,7 @@ jobs:
         run: |
           Set-Location "$env:GITHUB_WORKSPACE\pc_local\buildsrc"
           python -m pip install --upgrade pip
-          pip install -r requirements_local.txt pyinstaller
+          pip install -r requirements.txt pyinstaller
 
       - name: Generate application icon
         shell: powershell
@@ -94,7 +94,7 @@ jobs:
         shell: powershell
         run: |
           Set-Location "$env:GITHUB_WORKSPACE\pc_local\buildsrc"
-          & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" installer_local.iss
+          & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" installer.iss
           Get-Item output\MonopolioMultiBotDesktop_Setup_v2.0.0.exe
           Get-FileHash output\MonopolioMultiBotDesktop_Setup_v2.0.0.exe -Algorithm SHA256 | Format-List
 
