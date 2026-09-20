@@ -76,7 +76,9 @@ public class RuleEngine {
             JSONObject m=d.optJSONObject("Message"); if(m==null)m=d.optJSONObject("message");
             String msg="";
             if(m!=null){
+                String interactive=extractInteractiveSelection(m);
                 msg=first(
+                    interactive,
                     m.optString("conversation",""),
                     nested(m,"extendedTextMessage","text"),
                     nested(m,"ExtendedTextMessage","Text"),
@@ -165,6 +167,66 @@ public class RuleEngine {
         return false;
     }
 
+    private String extractInteractiveSelection(JSONObject m){
+        try{
+            JSONObject br=m.optJSONObject("buttonsResponseMessage");
+            if(br==null)br=m.optJSONObject("ButtonsResponseMessage");
+            if(br!=null){
+                String id=first(br.optString("selectedButtonID",""),br.optString("SelectedButtonID",""),br.optString("selectedButtonId",""));
+                if(!id.isEmpty())return id;
+            }
+
+            JSONObject tr=m.optJSONObject("templateButtonReplyMessage");
+            if(tr==null)tr=m.optJSONObject("TemplateButtonReplyMessage");
+            if(tr!=null){
+                String id=first(tr.optString("selectedID",""),tr.optString("SelectedID",""),tr.optString("selectedId",""));
+                if(!id.isEmpty())return id;
+            }
+
+            JSONObject lr=m.optJSONObject("listResponseMessage");
+            if(lr==null)lr=m.optJSONObject("ListResponseMessage");
+            if(lr!=null){
+                JSONObject sr=lr.optJSONObject("singleSelectReply");
+                if(sr==null)sr=lr.optJSONObject("SingleSelectReply");
+                if(sr!=null){
+                    String id=first(sr.optString("selectedRowID",""),sr.optString("SelectedRowID",""),sr.optString("selectedRowId",""));
+                    if(!id.isEmpty())return id;
+                }
+            }
+
+            JSONObject ir=m.optJSONObject("interactiveResponseMessage");
+            if(ir==null)ir=m.optJSONObject("InteractiveResponseMessage");
+            if(ir!=null){
+                JSONObject nf=ir.optJSONObject("nativeFlowResponseMessage");
+                if(nf==null)nf=ir.optJSONObject("NativeFlowResponseMessage");
+                if(nf!=null){
+                    String params=first(nf.optString("paramsJSON",""),nf.optString("ParamsJSON",""));
+                    if(!params.isEmpty()){
+                        try{
+                            JSONObject p=new JSONObject(params);
+                            String id=first(
+                                p.optString("id",""),
+                                p.optString("selected_id",""),
+                                p.optString("selectedId",""),
+                                p.optString("row_id",""),
+                                p.optString("rowId",""),
+                                p.optString("button_id",""),
+                                p.optString("buttonId","")
+                            );
+                            if(!id.isEmpty())return id;
+                            JSONObject ss=p.optJSONObject("single_select_reply");
+                            if(ss!=null){
+                                id=first(ss.optString("selected_row_id",""),ss.optString("selectedRowId",""));
+                                if(!id.isEmpty())return id;
+                            }
+                        }catch(Exception ignored){}
+                    }
+                }
+            }
+        }catch(Exception ignored){}
+        return "";
+    }
+
     private String nested(JSONObject o,String a,String b){JSONObject x=o.optJSONObject(a);return x==null?"":x.optString(b,"");}
     private String first(String...s){for(String x:s)if(x!=null&&!x.isEmpty())return x;return "";}
 
@@ -231,6 +293,16 @@ public class RuleEngine {
                 case"sticker":checked("sticker",wuz.sendSticker(route,MediaUtil.asDataUri(url)));break;
                 case"location":checked("ubicación",wuz.sendLocation(route,a.optDouble("lat"),a.optDouble("lng"),a.optString("name","Ubicación")));break;
                 case"contact":checked("contacto",wuz.sendContact(route,a.optString("name","Contacto"),a.optString("number","")));break;
+                case"buttons":{
+                    JSONArray buttons=a.optJSONArray("buttons"); if(buttons==null)buttons=new JSONArray();
+                    checked("botones",wuz.sendButtons(route,text,a.optString("title",""),a.optString("footer",""),a.optString("image_url",""),buttons));
+                    break;
+                }
+                case"list":{
+                    JSONArray sections=a.optJSONArray("sections"); if(sections==null)sections=new JSONArray();
+                    checked("lista",wuz.sendList(route,text,a.optString("title",""),a.optString("footer",""),a.optString("button_text","Ver opciones"),sections));
+                    break;
+                }
                 default:throw new Exception("Tipo de acción no soportado: "+type);
             }
             Prefs.put(c,"last_reply_at",String.valueOf(System.currentTimeMillis()));
