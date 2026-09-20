@@ -949,6 +949,317 @@ jobs:
           '@ | Set-Content patch_contacts_v208.py -Encoding UTF8
           python patch_contacts_v208.py
 
+          @'
+          import pathlib, re, textwrap
+
+          root = pathlib.Path(r"pc_local\buildsrc")
+          core_path = root / "core_local.py"
+          gui_path = root / "gui_local.py"
+          iss_path = root / "installer.iss"
+
+          # ---------- v2.0.9: plantillas portables de reglas ----------
+          s = core_path.read_text(encoding="utf-8")
+          s = s.replace("APP_VERSION = '2.0.8'", "APP_VERSION = '2.0.9'")
+
+          helpers = r'''
+          TEMPLATE_FORMAT = 'monopolio_multibot_template'
+          TEMPLATE_SCHEMA_VERSION = 1
+          TEMPLATE_MATCH_TYPES = {'any','exact','starts','regex','contains'}
+          TEMPLATE_ACTION_TYPES = {
+              'text','image','video','audio','document','sticker',
+              'location','contact','save_contact','buttons','list'
+          }
+
+          def _template_clone(value):
+              return json.loads(json.dumps(value,ensure_ascii=False))
+
+          def _template_media_name(mid):
+              try:
+                  m=q('SELECT name FROM media WHERE id=?',(int(mid),),one=True)
+                  return str((m or {}).get('name') or '')
+              except Exception:
+                  return ''
+
+          def _template_action_for_export(action):
+              if not isinstance(action,dict):
+                  return {'type':'text','text':''}
+              a=_template_clone(action)
+              if a.get('media_id'):
+                  hint=_template_media_name(a.get('media_id'))
+                  if hint:a['template_media_name']=hint
+                  a.pop('media_id',None)
+              if a.get('image_media_id'):
+                  hint=_template_media_name(a.get('image_media_id'))
+                  if hint:a['template_image_name']=hint
+                  a.pop('image_media_id',None)
+              return a
+
+          def _template_rule_for_export(rule):
+              return {
+                  'name':str(rule.get('name') or 'Regla'),
+                  'match_type':str(rule.get('match_type') or 'contains'),
+                  'pattern':str(rule.get('pattern') or ''),
+                  'priority':int(rule.get('priority') or 100),
+                  'case_sensitive':bool(rule.get('case_sensitive')),
+                  'stop_after':bool(rule.get('stop_after',1)),
+                  'actions':[_template_action_for_export(a) for a in (rule.get('actions') or [])],
+              }
+
+          def make_rule_template(pid, rule_ids=None, name='', description=''):
+              rows=rules_for(pid)
+              if rule_ids:
+                  wanted={int(x) for x in rule_ids}
+                  rows=[r for r in rows if int(r.get('id') or 0) in wanted]
+              if not rows:
+                  raise RuntimeError('No hay reglas para crear la plantilla.')
+              template_name=str(name or (rows[0].get('name') if len(rows)==1 else 'Plantilla de reglas')).strip()
+              return {
+                  'format':TEMPLATE_FORMAT,
+                  'schema_version':TEMPLATE_SCHEMA_VERSION,
+                  'template':{
+                      'name':template_name or 'Plantilla de reglas',
+                      'description':str(description or '').strip(),
+                      'created_at':datetime.now().isoformat(timespec='seconds'),
+                      'created_with':f'{APP_NAME} {APP_VERSION}',
+                      'rule_count':len(rows),
+                      'import_behavior':'disabled_until_review',
+                  },
+                  'rules':[_template_rule_for_export(r) for r in rows],
+              }
+
+          def export_rule_template(path,pid,rule_ids=None,name='',description=''):
+              obj=make_rule_template(pid,rule_ids,name,description)
+              p=Path(path)
+              if p.suffix.lower() not in ('.mbtpl','.json'):
+                  p=p.with_suffix('.mbtpl')
+              p.write_text(json.dumps(obj,ensure_ascii=False,indent=2),encoding='utf-8')
+              return str(p)
+
+          def _template_validate_action(action,warnings):
+              if not isinstance(action,dict):
+                  raise RuntimeError('Una acción de la plantilla no es válida.')
+              a=_template_clone(action)
+              typ=str(a.get('type') or '').strip().lower()
+              if typ not in TEMPLATE_ACTION_TYPES:
+                  raise RuntimeError(f'Acción no compatible en plantilla: {typ or "(vacía)"}')
+              a['type']=typ
+              try:
+                  a['delay_ms']=max(0,min(int(a.get('delay_ms') or 0),3600000))
+              except Exception:
+                  a['delay_ms']=0
+              if 'media_id' in a:
+                  a.pop('media_id',None)
+                  warnings.append(f'{typ}: se ignoró un media_id local de otra instalación')
+              if 'image_media_id' in a:
+                  a.pop('image_media_id',None)
+                  warnings.append('buttons: se ignoró image_media_id local de otra instalación')
+              if a.get('template_media_name'):
+                  a['template_media_name']=str(a.get('template_media_name'))[:240]
+              if a.get('template_image_name'):
+                  a['template_image_name']=str(a.get('template_image_name'))[:240]
+              return a
+
+          def read_rule_template(path):
+              p=Path(path)
+              if not p.exists() or not p.is_file():
+                  raise RuntimeError('No se encontró el archivo de plantilla.')
+              if p.stat().st_size>2*1024*1024:
+                  raise RuntimeError('La plantilla supera el límite de 2 MB.')
+              try:
+                  obj=json.loads(p.read_text(encoding='utf-8-sig'))
+              except Exception as e:
+                  raise RuntimeError(f'La plantilla no contiene JSON válido: {e}')
+              if not isinstance(obj,dict):
+                  raise RuntimeError('Formato de plantilla inválido.')
+              if obj.get('format')!=TEMPLATE_FORMAT:
+                  raise RuntimeError('Este archivo no es una plantilla de Monopolio MultiBot.')
+              try:ver=int(obj.get('schema_version') or 0)
+              except Exception:ver=0
+              if ver!=TEMPLATE_SCHEMA_VERSION:
+                  raise RuntimeError(f'Versión de plantilla no compatible: {ver}.')
+              src_rules=obj.get('rules')
+              if not isinstance(src_rules,list) or not src_rules:
+                  raise RuntimeError('La plantilla no contiene reglas.')
+              if len(src_rules)>100:
+                  raise RuntimeError('La plantilla contiene más de 100 reglas.')
+              warnings=[]
+              rules=[]
+              for i,raw in enumerate(src_rules,1):
+                  if not isinstance(raw,dict):
+                      raise RuntimeError(f'La regla {i} no es válida.')
+                  mt=str(raw.get('match_type') or 'contains').lower()
+                  if mt not in TEMPLATE_MATCH_TYPES:
+                      raise RuntimeError(f'Coincidencia no compatible en regla {i}: {mt}')
+                  acts=raw.get('actions') or []
+                  if not isinstance(acts,list):
+                      raise RuntimeError(f'Las acciones de la regla {i} no son válidas.')
+                  if len(acts)>200:
+                      raise RuntimeError(f'La regla {i} supera 200 acciones.')
+                  try:priority=int(raw.get('priority',100))
+                  except Exception:priority=100
+                  priority=max(-100000,min(priority,100000))
+                  rules.append({
+                      'name':str(raw.get('name') or f'Regla {i}')[:200],
+                      'match_type':mt,
+                      'pattern':str(raw.get('pattern') or '')[:5000],
+                      'priority':priority,
+                      'enabled':False,
+                      'case_sensitive':bool(raw.get('case_sensitive',False)),
+                      'stop_after':bool(raw.get('stop_after',True)),
+                      'actions':[_template_validate_action(a,warnings) for a in acts],
+                  })
+              meta=obj.get('template') if isinstance(obj.get('template'),dict) else {}
+              return {
+                  'name':str(meta.get('name') or p.stem),
+                  'description':str(meta.get('description') or ''),
+                  'rules':rules,
+                  'warnings':warnings,
+              }
+
+          def import_rule_template(pid,path):
+              parsed=read_rule_template(path)
+              ids=[]
+              placeholders=0
+              for rule in parsed['rules']:
+                  for a in rule.get('actions',[]):
+                      if a.get('template_media_name') or a.get('template_image_name'):
+                          placeholders+=1
+                  ids.append(save_rule(pid,rule))
+              log(pid,'info',f"Plantilla importada · {parsed['name']} · {len(ids)} regla(s) · desactivadas")
+              return {
+                  'name':parsed['name'],
+                  'description':parsed['description'],
+                  'ids':ids,
+                  'imported_count':len(ids),
+                  'media_placeholders':placeholders,
+                  'warnings':parsed['warnings'],
+              }
+          '''
+          helpers=textwrap.dedent(helpers)
+
+          anchor="def add_media(source):"
+          if "TEMPLATE_FORMAT = 'monopolio_multibot_template'" not in s:
+              pos=s.find(anchor)
+              if pos<0:raise SystemExit("No se encontró ancla para helpers de plantillas")
+              s=s[:pos]+helpers+"\n\n"+s[pos:]
+          compile(s,str(core_path),'exec')
+          core_path.write_text(s,encoding='utf-8')
+
+          # ---------- GUI ----------
+          g=gui_path.read_text(encoding='utf-8')
+
+          new_build_rules = r'''
+              def build_rules(self):
+                  f=self.tabs['Reglas']
+                  ttk.Label(f,text='Reglas automáticas',font=('Segoe UI',20,'bold')).pack(anchor='w')
+                  tpl=ttk.LabelFrame(f,text='Plantillas',padding=10);tpl.pack(fill='x',pady=(8,4))
+                  ttk.Label(
+                      tpl,
+                      text='Importa archivos .mbtpl que puedo prepararte con una secuencia completa. Las reglas importadas quedan DESACTIVADAS para que las revises y edites antes de usarlas.',
+                      wraplength=760,foreground=MUTED
+                  ).pack(side='left',fill='x',expand=True)
+                  tb=ttk.Frame(tpl);tb.pack(side='right',padx=(10,0))
+                  ttk.Button(tb,text='Importar plantilla',command=self.import_rule_template).pack(side='left')
+                  ttk.Button(tb,text='Exportar selección',command=self.export_selected_template).pack(side='left',padx=5)
+                  ttk.Button(tb,text='Exportar todas',command=self.export_all_template).pack(side='left')
+                  self.rules_tree=ttk.Treeview(f,columns=('name','match','pattern','priority','on'),show='headings')
+                  for col,head,width in [('name','Nombre',220),('match','Coincidencia',120),('pattern','Patrón',300),('priority','Prioridad',90),('on','Activa',80)]:
+                      self.rules_tree.heading(col,text=head);self.rules_tree.column(col,width=width)
+                  self.rules_tree.pack(fill='both',expand=True,pady=12)
+                  b=ttk.Frame(f);b.pack(fill='x')
+                  ttk.Button(b,text='+ Nueva regla',command=self.new_rule).pack(side='left')
+                  ttk.Button(b,text='Editar',command=self.edit_rule).pack(side='left',padx=5)
+                  ttk.Button(b,text='Duplicar',command=self.dup_rule).pack(side='left')
+                  ttk.Button(b,text='Eliminar',command=self.del_rule).pack(side='right')
+          '''
+          new_build_rules=textwrap.indent(textwrap.dedent(new_build_rules).strip()+"\n","    ")
+          g,n=re.subn(
+              r"    def build_rules\(self\):\n.*?(?=\n    def refresh_rules\(self\):)",
+              lambda _m:new_build_rules.rstrip(),
+              g,count=1,flags=re.S
+          )
+          if n!=1:raise SystemExit("No se pudo reemplazar build_rules")
+
+          template_methods = r'''
+              def import_rule_template(self):
+                  pid=self.pid()
+                  if not pid:return
+                  path=filedialog.askopenfilename(
+                      parent=self,title='Importar plantilla de reglas',
+                      filetypes=[('Plantilla Monopolio MultiBot','*.mbtpl'),('JSON','*.json'),('Todos los archivos','*.*')]
+                  )
+                  if not path:return
+                  try:
+                      result=C.import_rule_template(pid,path)
+                      self.refresh_rules();self.refresh_home()
+                      for rid in result.get('ids',[]):
+                          if self.rules_tree.exists(str(rid)):
+                              self.rules_tree.selection_add(str(rid))
+                      extra=''
+                      if result.get('media_placeholders'):
+                          extra=f"\n\nHay {result['media_placeholders']} referencia(s) de archivo para seleccionar al editar las acciones."
+                      if result.get('warnings'):
+                          extra+=f"\n\nAvisos: {len(result['warnings'])}"
+                      messagebox.showinfo(
+                          'Plantilla importada',
+                          f"Plantilla: {result.get('name','')}\nReglas importadas: {result.get('imported_count',0)}\nEstado: DESACTIVADAS para revisión.{extra}",
+                          parent=self
+                      )
+                  except Exception as e:
+                      messagebox.showerror('Importar plantilla',str(e),parent=self)
+
+              def _template_save_path(self,default_name):
+                  safe=re.sub(r'[^A-Za-z0-9ÁÉÍÓÚáéíóúÑñ._ -]+','_',default_name or 'Plantilla')
+                  return filedialog.asksaveasfilename(
+                      parent=self,title='Guardar plantilla',
+                      defaultextension='.mbtpl',
+                      initialfile=safe+'.mbtpl',
+                      filetypes=[('Plantilla Monopolio MultiBot','*.mbtpl'),('JSON','*.json')]
+                  )
+
+              def _export_template_ids(self,ids,default_name):
+                  if not ids:return
+                  name=simpledialog.askstring('Nombre de plantilla','Nombre de la plantilla:',initialvalue=default_name,parent=self)
+                  if name is None:return
+                  description=simpledialog.askstring('Descripción','Descripción opcional:',initialvalue='',parent=self)
+                  if description is None:return
+                  path=self._template_save_path(name.strip() or default_name)
+                  if not path:return
+                  try:
+                      saved=C.export_rule_template(path,self.pid(),ids,name,description)
+                      messagebox.showinfo('Plantilla',f'Plantilla guardada correctamente:\n{saved}',parent=self)
+                  except Exception as e:
+                      messagebox.showerror('Plantilla',str(e),parent=self)
+
+              def export_selected_template(self):
+                  ids=[int(x) for x in self.rules_tree.selection()]
+                  if not ids:
+                      return messagebox.showinfo('Plantillas','Selecciona una o varias reglas para exportar.',parent=self)
+                  rows=[r for r in C.rules_for(self.pid()) if int(r.get('id') or 0) in set(ids)]
+                  default=rows[0]['name'] if len(rows)==1 and rows else 'Secuencia de reglas'
+                  self._export_template_ids(ids,default)
+
+              def export_all_template(self):
+                  rows=C.rules_for(self.pid())
+                  if not rows:
+                      return messagebox.showinfo('Plantillas','Este negocio no tiene reglas para exportar.',parent=self)
+                  self._export_template_ids([r['id'] for r in rows],f"Reglas {self.profile_var.get()}")
+          '''
+          template_methods=textwrap.indent(textwrap.dedent(template_methods).strip()+"\n","    ")
+          anchor="    def refresh_rules(self):\n"
+          pos=g.find(anchor)
+          if pos<0:raise SystemExit("No se encontró refresh_rules para métodos de plantillas")
+          g=g[:pos]+template_methods+g[pos:]
+
+          compile(g,str(gui_path),'exec')
+          gui_path.write_text(g,encoding='utf-8')
+
+          t=iss_path.read_text(encoding='utf-8')
+          t=t.replace('2.0.8','2.0.9')
+          iss_path.write_text(t,encoding='utf-8')
+          '@ | Set-Content patch_templates_v209.py -Encoding UTF8
+          python patch_templates_v209.py
+
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
@@ -1173,6 +1484,88 @@ jobs:
           '@ | Set-Content test_google_v207.py -Encoding UTF8
           python test_google_v207.py
 
+      - name: Internal rule template tests
+        shell: powershell
+        run: |
+          Set-Location "$env:GITHUB_WORKSPACE\pc_local\buildsrc"
+          @'
+          import json, pathlib, tempfile
+          import core_local as C
+
+          td=pathlib.Path(tempfile.mkdtemp(prefix='multibot-template-test-'))
+          src=C.add_profile('TEST TEMPLATE SOURCE')
+          dst=C.add_profile('TEST TEMPLATE TARGET')
+
+          media_file=td/'catalogo.jpg'
+          media_file.write_bytes(b'fake image bytes')
+          mid=C.add_media(str(media_file))
+
+          r1=C.save_rule(src,{
+              'name':'Bienvenida',
+              'match_type':'contains',
+              'pattern':'hola',
+              'priority':10,
+              'enabled':True,
+              'case_sensitive':False,
+              'stop_after':True,
+              'actions':[
+                  {'type':'save_contact','contact_name':'@nombre','label':'Lead'},
+                  {'type':'text','text':'Hola @nombre','delay_ms':250},
+                  {'type':'image','media_id':mid,'text':'Catálogo'}
+              ]
+          })
+          r2=C.save_rule(src,{
+              'name':'Botón precios',
+              'match_type':'exact',
+              'pattern':'PRECIOS',
+              'priority':20,
+              'enabled':True,
+              'actions':[
+                  {'type':'buttons','text':'Escoge','buttons':[{'id':'VIDEO','text':'Video'}]}
+              ]
+          })
+
+          out=td/'secuencia.mbtpl'
+          C.export_rule_template(out,src,[r1,r2],'Secuencia comercial','Prueba')
+          raw=json.loads(out.read_text('utf-8'))
+          assert raw['format']=='monopolio_multibot_template'
+          assert raw['schema_version']==1
+          assert len(raw['rules'])==2
+          img=raw['rules'][0]['actions'][2]
+          assert 'media_id' not in img
+          assert img['template_media_name']=='catalogo.jpg'
+
+          result=C.import_rule_template(dst,out)
+          assert result['imported_count']==2
+          assert result['media_placeholders']==1
+          imported=C.rules_for(dst)
+          assert len(imported)==2
+          assert all(not r['enabled'] for r in imported), 'Las plantillas deben importarse desactivadas'
+          imported_img=imported[0]['actions'][2]
+          assert 'media_id' not in imported_img
+          assert imported_img['template_media_name']=='catalogo.jpg'
+
+          # Plantilla creada externamente (por ejemplo por ChatGPT).
+          external={
+              'format':'monopolio_multibot_template',
+              'schema_version':1,
+              'template':{'name':'Generada externamente','description':'OK'},
+              'rules':[{
+                  'name':'Regla ChatGPT','match_type':'starts','pattern':'QUIERO',
+                  'priority':50,'enabled':True,'case_sensitive':False,'stop_after':True,
+                  'actions':[{'type':'text','text':'Perfecto @nombre'},{'type':'save_contact','label':'Cliente'}]
+              }]
+          }
+          ext=td/'chatgpt.mbtpl';ext.write_text(json.dumps(external,ensure_ascii=False),encoding='utf-8')
+          res2=C.import_rule_template(dst,ext)
+          rr=next(r for r in C.rules_for(dst) if r['id']==res2['ids'][0])
+          assert rr['enabled']==0
+          assert rr['actions'][0]['text']=='Perfecto @nombre'
+
+          print('TEMPLATE TESTS OK: export + import + multimedia placeholder + external template + disabled-by-default')
+          '@ | Set-Content test_templates_v209.py -Encoding UTF8
+          python test_templates_v209.py
+
       - name: Generate application icon
         shell: powershell
         run: |
@@ -1241,12 +1634,12 @@ jobs:
         run: |
           Set-Location "$env:GITHUB_WORKSPACE\pc_local\buildsrc"
           & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" installer.iss
-          Get-Item output\MonopolioMultiBotDesktop_Setup_v2.0.8.exe
-          Get-FileHash output\MonopolioMultiBotDesktop_Setup_v2.0.8.exe -Algorithm SHA256 | Format-List
+          Get-Item output\MonopolioMultiBotDesktop_Setup_v2.0.9.exe
+          Get-FileHash output\MonopolioMultiBotDesktop_Setup_v2.0.9.exe -Algorithm SHA256 | Format-List
 
       - name: Upload installer
         uses: actions/upload-artifact@v4
         with:
-          name: MonopolioMultiBotDesktop-Windows-v2.0.8
-          path: pc_local/buildsrc/output/MonopolioMultiBotDesktop_Setup_v2.0.8.exe
+          name: MonopolioMultiBotDesktop-Windows-v2.0.9
+          path: pc_local/buildsrc/output/MonopolioMultiBotDesktop_Setup_v2.0.9.exe
           retention-days: 30
