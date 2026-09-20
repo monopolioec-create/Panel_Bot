@@ -77,10 +77,23 @@ public class RuleEngine {
             msg=first(msg,d.optString("text",""),root.optString("message",""));
             msg=msg==null?"":msg.trim();
 
+            String messageId="";
+            if(info!=null) messageId=first(info.optString("ID",""),info.optString("Id",""),info.optString("id",""));
+            messageId=first(messageId,d.optString("id",""),d.optString("ID",""),root.optString("id",""));
+            if(isDuplicate(messageId)){
+                safeLog("info","Duplicado descartado · ID "+messageId);
+                return;
+            }
+
             Prefs.put(c,"last_message_at",String.valueOf(System.currentTimeMillis()));
             Prefs.put(c,"last_message_text",msg);
             Prefs.put(c,"last_message_from",phone);
             safeLog("info","Mensaje recibido: \\\""+shortText(msg,100)+"\\\" · de "+(phone.isEmpty()?route:phone));
+
+            if(!Prefs.getBool(c,"bot_enabled",true)){
+                safeLog("info","BOT APAGADO · mensaje recibido pero no respondido");
+                return;
+            }
 
             boolean matched=executeRules(route,phone,name,msg);
             if(!matched) safeLog("info","Mensaje recibido sin regla coincidente: \\\""+shortText(msg,100)+"\\\"");
@@ -121,6 +134,23 @@ public class RuleEngine {
             if(digits.length()>=8)return digits;
         }
         return "";
+    }
+
+    private synchronized boolean isDuplicate(String id){
+        if(id==null||id.isEmpty())return false;
+        String raw=Prefs.get(c,"dedupe_ids","");
+        LinkedHashSet<String> set=new LinkedHashSet<>();
+        if(!raw.isEmpty())for(String x:raw.split("\\n"))if(!x.isEmpty())set.add(x);
+        if(set.contains(id))return true;
+        set.add(id);
+        while(set.size()>200){
+            Iterator<String> it=set.iterator();
+            if(it.hasNext()){it.next();it.remove();}else break;
+        }
+        StringBuilder out=new StringBuilder();
+        for(String x:set){if(out.length()>0)out.append("\\n");out.append(x);}
+        Prefs.put(c,"dedupe_ids",out.toString());
+        return false;
     }
 
     private String nested(JSONObject o,String a,String b){JSONObject x=o.optJSONObject(a);return x==null?"":x.optString(b,"");}
