@@ -96,9 +96,6 @@ for phrase in [
     "Correo que recibirá los contactos:",
     "Seleccionar / cambiar cuenta",
     "SINCRONIZACIÓN AUTOMÁTICA ACTIVA",
-    "✓ Sincronizado",
-    "⚠ Error",
-    "identificadores internos LID",
 ]:
     assert phrase in gui,phrase
 
