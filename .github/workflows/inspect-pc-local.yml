@@ -1,0 +1,43 @@
+name: Inspect PC Local Media Code
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/inspect-pc-local.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Decode source and inspect media functions
+        shell: bash
+        run: |
+          python - <<'PY'
+          import base64, glob, pathlib, zipfile, re, os
+          parts=[]
+          for p in sorted(glob.glob('pc_local/source.part*')):
+              s=pathlib.Path(p).read_text().strip()
+              if pathlib.Path(p).name!='source.part04':
+                  s=s[:6000]
+              parts.append(s)
+          pathlib.Path('/tmp/source.zip').write_bytes(base64.b64decode(''.join(parts)))
+          with zipfile.ZipFile('/tmp/source.zip') as z:
+              z.extractall('/tmp/src')
+          c=pathlib.Path('/tmp/src/core_local.py').read_text(encoding='utf-8')
+          print('=== MEDIA ENDPOINT REFERENCES ===')
+          for m in re.finditer(r'.{0,300}/chat/send/(?:image|video|audio|document).{0,600}', c, re.S):
+              print(m.group(0))
+              print('\n---\n')
+          print('=== FUNCTIONS WITH MEDIA/FILE/ACTION ===')
+          lines=c.splitlines()
+          for i,line in enumerate(lines):
+              if re.search(r'^\s*def\s+.*(?:media|file|action|send)', line, re.I):
+                  print(f'## line {i+1}: {line}')
+                  print('\n'.join(lines[i:i+90]))
+                  print('\n---\n')
+          PY
