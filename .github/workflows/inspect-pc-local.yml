@@ -1,4 +1,4 @@
-name: Export Decoded PC Local Source
+name: Inspect Rules Template Integration
 
 on:
   workflow_dispatch:
@@ -10,15 +10,15 @@ permissions:
   contents: read
 
 jobs:
-  export:
+  inspect:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Decode source
+      - name: Decode source and inspect rules
         shell: bash
         run: |
           python - <<'PY'
-          import base64, glob, pathlib, zipfile
+          import base64, glob, pathlib, zipfile, re
           parts=[]
           for p in sorted(glob.glob('pc_local/source.part*')):
               s=pathlib.Path(p).read_text().strip()
@@ -29,9 +29,26 @@ jobs:
           pathlib.Path('decoded').mkdir(exist_ok=True)
           with zipfile.ZipFile('/tmp/source.zip') as z:
               z.extractall('decoded')
+          for fn in ['core_local.py','gui_local.py']:
+              c=pathlib.Path('decoded/'+fn).read_text(encoding='utf-8')
+              print('\n==========',fn,'==========')
+              lines=c.splitlines()
+              for i,line in enumerate(lines):
+                  if (
+                    re.search(r'def .*rule',line,re.I) or
+                    'CREATE TABLE IF NOT EXISTS rules' in line or
+                    'rules_for' in line or
+                    'add_rule' in line or
+                    'save_rule' in line or
+                    'build_rules' in line or
+                    'refresh_rules' in line
+                  ):
+                    print(f'\n### line {i+1}: {line}')
+                    print('\n'.join(lines[max(0,i-10):min(len(lines),i+130)]))
+                    print('\n---')
           PY
       - uses: actions/upload-artifact@v4
         with:
-          name: decoded-pc-local-source
+          name: decoded-rules-source
           path: decoded/
           retention-days: 1
