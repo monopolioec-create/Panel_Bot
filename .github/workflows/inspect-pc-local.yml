@@ -1,4 +1,4 @@
-name: Inspect PC Local Contacts Integration
+name: Export Decoded PC Local Source
 
 on:
   workflow_dispatch:
@@ -10,15 +10,15 @@ permissions:
   contents: read
 
 jobs:
-  inspect:
+  export:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Decode source and inspect database and GUI
+      - name: Decode source
         shell: bash
         run: |
           python - <<'PY'
-          import base64, glob, pathlib, zipfile, re
+          import base64, glob, pathlib, zipfile
           parts=[]
           for p in sorted(glob.glob('pc_local/source.part*')):
               s=pathlib.Path(p).read_text().strip()
@@ -26,26 +26,12 @@ jobs:
                   s=s[:6000]
               parts.append(s)
           pathlib.Path('/tmp/source.zip').write_bytes(base64.b64decode(''.join(parts)))
+          pathlib.Path('decoded').mkdir(exist_ok=True)
           with zipfile.ZipFile('/tmp/source.zip') as z:
-              z.extractall('/tmp/src')
-          for fn in ['core_local.py','gui_local.py']:
-              c=pathlib.Path('/tmp/src/'+fn).read_text(encoding='utf-8')
-              lines=c.splitlines()
-              print('\n==========',fn,'==========')
-              for i,line in enumerate(lines):
-                  if (
-                      'CREATE TABLE' in line or
-                      re.search(r'def .*action',line,re.I) or
-                      re.search(r'def .*rule',line,re.I) or
-                      re.search(r'def .*media',line,re.I) or
-                      re.search(r'def .*tab',line,re.I) or
-                      'Combobox' in line or
-                      'contact' in line.lower() or
-                      'buttons' in line.lower() or
-                      'location' in line.lower() or
-                      'sticker' in line.lower()
-                  ):
-                      print(f'\n### line {i+1}: {line}')
-                      print('\n'.join(lines[max(0,i-10):min(len(lines),i+85)]))
-                      print('\n---')
+              z.extractall('decoded')
           PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: decoded-pc-local-source
+          path: decoded/
+          retention-days: 1
