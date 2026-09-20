@@ -313,6 +313,335 @@ jobs:
           '@ | Set-Content patch_v205.py -Encoding UTF8
           python patch_v205.py
 
+          @'
+          import pathlib, re, textwrap
+
+          root = pathlib.Path(r"pc_local\buildsrc")
+          core_path = root / "core_local.py"
+          gui_path = root / "gui_local.py"
+          iss_path = root / "installer.iss"
+
+          # ---------- CORE: contactos por negocio ----------
+          s = core_path.read_text(encoding="utf-8")
+          s = s.replace("APP_VERSION = '2.0.5'", "APP_VERSION = '2.0.6'")
+
+          old_schema = """        CREATE TABLE IF NOT EXISTS dedupe(
+            profile_id TEXT NOT NULL, msgid TEXT NOT NULL, ts INTEGER NOT NULL,
+            PRIMARY KEY(profile_id,msgid)
+          );
+          ''')"""
+          new_schema = """        CREATE TABLE IF NOT EXISTS dedupe(
+            profile_id TEXT NOT NULL, msgid TEXT NOT NULL, ts INTEGER NOT NULL,
+            PRIMARY KEY(profile_id,msgid)
+          );
+          CREATE TABLE IF NOT EXISTS contacts(
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            profile_id TEXT NOT NULL,
+            phone TEXT NOT NULL,
+            name TEXT NOT NULL DEFAULT '',
+            label TEXT NOT NULL DEFAULT '',
+            note TEXT NOT NULL DEFAULT '',
+            first_seen TEXT NOT NULL,
+            last_seen TEXT NOT NULL,
+            last_message TEXT NOT NULL DEFAULT '',
+            last_rule TEXT NOT NULL DEFAULT '',
+            interactions INTEGER NOT NULL DEFAULT 1,
+            UNIQUE(profile_id,phone)
+          );
+          CREATE INDEX IF NOT EXISTS idx_contacts_profile_name ON contacts(profile_id,name);
+          CREATE INDEX IF NOT EXISTS idx_contacts_profile_phone ON contacts(profile_id,phone);
+          ''')"""
+          if old_schema not in s:
+              raise SystemExit("No se encontró esquema dedupe para agregar contactos")
+          s = s.replace(old_schema,new_schema,1)
+
+          helper_marker = """def delete_schedule(sid): x('DELETE FROM schedules WHERE id=?',(sid,))
+
+
+          def recent_logs(pid=None,limit=400):"""
+          helpers = """def delete_schedule(sid): x('DELETE FROM schedules WHERE id=?',(sid,))
+
+
+          def normalize_contact_phone(phone):
+              return re.sub(r'\\D+','',str(phone or ''))
+
+
+          def contacts_for(pid, search=''):
+              term=str(search or '').strip()
+              if term:
+                  like=f'%{term}%'
+                  return q(
+                      'SELECT * FROM contacts WHERE profile_id=? AND '
+                      '(name LIKE ? OR phone LIKE ? OR label LIKE ? OR note LIKE ?) '
+                      'ORDER BY last_seen DESC,id DESC',
+                      (pid,like,like,like,like)
+                  )
+              return q('SELECT * FROM contacts WHERE profile_id=? ORDER BY last_seen DESC,id DESC',(pid,))
+
+
+          def get_contact(cid):
+              return q('SELECT * FROM contacts WHERE id=?',(int(cid),),one=True)
+
+
+          def save_customer_contact(profile_id, phone, name='', label='', note='', message='', rule_name=''):
+              phone=normalize_contact_phone(phone)
+              if not phone:
+                  raise RuntimeError('No se pudo obtener el número del cliente para guardar el contacto.')
+              now=datetime.now().isoformat(timespec='seconds')
+              name=str(name or '').strip()
+              label=str(label or '').strip()
+              note=str(note or '').strip()
+              message=str(message or '')[:500]
+              rule_name=str(rule_name or '')[:200]
+              existing=q('SELECT * FROM contacts WHERE profile_id=? AND phone=?',(profile_id,phone),one=True)
+              if existing:
+                  final_name=str(existing.get('name') or '') or name
+                  final_label=str(existing.get('label') or '') or label
+                  final_note=str(existing.get('note') or '') or note
+                  x(
+                      'UPDATE contacts SET name=?,label=?,note=?,last_seen=?,last_message=?,last_rule=?,'
+                      'interactions=interactions+1 WHERE id=?',
+                      (final_name,final_label,final_note,now,message,rule_name,int(existing['id']))
+                  )
+                  return int(existing['id']), False
+              cid=x(
+                  'INSERT INTO contacts(profile_id,phone,name,label,note,first_seen,last_seen,last_message,last_rule,interactions) '
+                  'VALUES(?,?,?,?,?,?,?,?,?,1)',
+                  (profile_id,phone,name,label,note,now,now,message,rule_name)
+              )
+              return int(cid), True
+
+
+          def update_contact(cid, name, label='', note=''):
+              x(
+                  'UPDATE contacts SET name=?,label=?,note=? WHERE id=?',
+                  (str(name or '').strip(),str(label or '').strip(),str(note or '').strip(),int(cid))
+              )
+
+
+          def delete_contact(cid):
+              x('DELETE FROM contacts WHERE id=?',(int(cid),))
+
+
+          def recent_logs(pid=None,limit=400):"""
+          helpers = textwrap.dedent(helpers)
+          if helper_marker not in s:
+              raise SystemExit("No se encontró punto de inserción de helpers de contactos")
+          s = s.replace(helper_marker,helpers,1)
+
+          old_delete = "con.execute('DELETE FROM rules WHERE profile_id=?',(pid,)); con.execute('DELETE FROM schedules WHERE profile_id=?',(pid,)); con.execute('DELETE FROM logs WHERE profile_id=?',(pid,)); con.execute('DELETE FROM dedupe WHERE profile_id=?',(pid,)); con.execute('DELETE FROM profiles WHERE id=?',(pid,)); con.commit()"
+          new_delete = "con.execute('DELETE FROM rules WHERE profile_id=?',(pid,)); con.execute('DELETE FROM schedules WHERE profile_id=?',(pid,)); con.execute('DELETE FROM logs WHERE profile_id=?',(pid,)); con.execute('DELETE FROM dedupe WHERE profile_id=?',(pid,)); con.execute('DELETE FROM contacts WHERE profile_id=?',(pid,)); con.execute('DELETE FROM profiles WHERE id=?',(pid,)); con.commit()"
+          if old_delete not in s:
+              raise SystemExit("No se encontró limpieza de perfil")
+          s = s.replace(old_delete,new_delete,1)
+
+          action_marker = """        text=self.vars(a.get('text',a.get('caption','')),phone,name,msg)
+
+              if typ=='text':"""
+          contact_action = """        text=self.vars(a.get('text',a.get('caption','')),phone,name,msg)
+
+              if typ=='save_contact':
+                  resolved_phone=normalize_contact_phone(phone or str(route).split('@',1)[0])
+                  display_name=self.vars(a.get('contact_name') or '@nombre',phone,name,msg).strip()
+                  if not display_name:
+                      display_name=(name or '').strip()
+                      if not display_name:
+                          display_name=f'Cliente {resolved_phone[-4:]}' if resolved_phone else 'Cliente'
+                  label=self.vars(a.get('label') or 'Cliente',phone,name,msg).strip()
+                  note=self.vars(a.get('note') or '',phone,name,msg).strip()
+                  cid,created=save_customer_contact(pid,resolved_phone,display_name,label,note,msg,rule_name)
+                  log(pid,'info',f"Contacto {'guardado' if created else 'actualizado'} · {display_name} · {resolved_phone} · ID {cid}")
+                  return
+
+              if typ=='text':"""
+          if action_marker not in s:
+              raise SystemExit("No se encontró execute_action para contactos")
+          s = s.replace(action_marker,contact_action,1)
+          compile(s,str(core_path),'exec')
+          core_path.write_text(s,encoding="utf-8")
+
+          # ---------- GUI: acción + pestaña Contactos ----------
+          g = gui_path.read_text(encoding="utf-8")
+          g = g.replace("import json, os, threading, tkinter as tk","import csv, json, os, threading, tkinter as tk",1)
+          g = g.replace(
+              "TYPES=['text','image','video','audio','document','sticker','location','contact','buttons','list']",
+              "TYPES=['text','image','video','audio','document','sticker','location','contact','save_contact','buttons','list']",
+              1
+          )
+
+          contact_ui_old = """        if typ=='contact':
+              for lab,key in [('Nombre','name'),('Número','number')]:
+                  r=ttk.Frame(self.body);r.pack(fill='x',pady=5);ttk.Label(r,text=lab,width=22).pack(side='left');sv=tk.StringVar(value=str(self.v.get(key,'')));self.widgets[key]=sv;ttk.Entry(r,textvariable=sv).pack(side='left',fill='x',expand=True)
+          if typ in ('buttons','list'):"""
+          contact_ui_new = """        if typ=='contact':
+              for lab,key in [('Nombre','name'),('Número','number')]:
+                  r=ttk.Frame(self.body);r.pack(fill='x',pady=5);ttk.Label(r,text=lab,width=22).pack(side='left');sv=tk.StringVar(value=str(self.v.get(key,'')));self.widgets[key]=sv;ttk.Entry(r,textvariable=sv).pack(side='left',fill='x',expand=True)
+          if typ=='save_contact':
+              ttk.Label(self.body,text='AUTOGUARDAR CONTACTO DEL CLIENTE',font=('Segoe UI',11,'bold')).pack(anchor='w',pady=(2,8))
+              ttk.Label(self.body,text='Cuando esta regla coincida, se guardará el número que escribió por WhatsApp dentro de Contactos del negocio seleccionado. Si ya existe, se actualiza la última interacción sin duplicarlo.',wraplength=690,foreground=MUTED).pack(anchor='w',pady=(0,12))
+              for lab,key,default in [('Nombre a guardar','contact_name','@nombre'),('Etiqueta','label','Cliente')]:
+                  r=ttk.Frame(self.body);r.pack(fill='x',pady=5);ttk.Label(r,text=lab,width=22).pack(side='left');sv=tk.StringVar(value=str(self.v.get(key,default)));self.widgets[key]=sv;ttk.Entry(r,textvariable=sv).pack(side='left',fill='x',expand=True)
+              ttk.Label(self.body,text='Nota (opcional)').pack(anchor='w',pady=(12,3));nt=tk.Text(self.body,height=5,wrap='word');nt.pack(fill='x');nt.insert('1.0',self.v.get('note',''));self.widgets['note']=nt
+              ttk.Label(self.body,text='Variables disponibles: @nombre, @telefono, @mensaje, @hora, @dia, @fecha_completa.',foreground=MUTED).pack(anchor='w',pady=8)
+          if typ in ('buttons','list'):"""
+          if contact_ui_old not in g:
+              raise SystemExit("No se encontró UI de acciones")
+          g = g.replace(contact_ui_old,contact_ui_new,1)
+
+          summary_old = """    def summary(self,a):
+              t=a.get('type','');
+              if t in ('buttons','list'):return (a.get('text') or '')[:90]+f" · {len(a.get('buttons',a.get('sections',[])))} opciones"
+              return (a.get('text') or a.get('name') or a.get('file_name') or '')[:110]"""
+          summary_new = """    def summary(self,a):
+              t=a.get('type','');
+              if t=='save_contact':return f"Autoguardar contacto · {a.get('contact_name') or '@nombre'} · {a.get('label') or 'Cliente'}"
+              if t in ('buttons','list'):return (a.get('text') or '')[:90]+f" · {len(a.get('buttons',a.get('sections',[])))} opciones"
+              return (a.get('text') or a.get('name') or a.get('file_name') or '')[:110]"""
+          g = g.replace(summary_old,summary_new,1)
+
+          tabs_old = """    def make_tabs(self):
+              self.tabs={}
+              for name in ['Inicio','Negocios','WhatsApp','Reglas','Archivos','Estados','Logs','Configuración']:
+                  f=ttk.Frame(self.nb,padding=16);self.nb.add(f,text=name);self.tabs[name]=f
+              self.build_home();self.build_profiles();self.build_whatsapp();self.build_rules();self.build_media();self.build_status();self.build_logs();self.build_settings()"""
+          tabs_new = """    def make_tabs(self):
+              self.tabs={}
+              for name in ['Inicio','Negocios','WhatsApp','Reglas','Archivos','Contactos','Estados','Logs','Configuración']:
+                  f=ttk.Frame(self.nb,padding=16);self.nb.add(f,text=name);self.tabs[name]=f
+              self.build_home();self.build_profiles();self.build_whatsapp();self.build_rules();self.build_media();self.build_contacts();self.build_status();self.build_logs();self.build_settings()"""
+          g = g.replace(tabs_old,tabs_new,1)
+          g = g.replace(
+              "    def profile_changed(self):self.refresh_home();self.refresh_rules();self.refresh_status();self.refresh_logs();self.refresh_whatsapp()",
+              "    def profile_changed(self):self.refresh_home();self.refresh_rules();self.refresh_contacts();self.refresh_status();self.refresh_logs();self.refresh_whatsapp()",
+              1
+          )
+
+          contacts_methods = r'''
+              def build_contacts(self):
+                  f=self.tabs['Contactos']
+                  ttk.Label(f,text='Contactos de clientes',font=('Segoe UI',20,'bold')).pack(anchor='w')
+                  ttk.Label(f,text='Los contactos se guardan localmente por negocio cuando una regla usa la acción save_contact. No se duplican por número. Puedes exportarlos a CSV o VCF para llevarlos a otra agenda.',wraplength=980,foreground=MUTED).pack(anchor='w',pady=(2,10))
+                  top=ttk.Frame(f);top.pack(fill='x')
+                  ttk.Label(top,text='Buscar:').pack(side='left')
+                  self.contact_search=tk.StringVar()
+                  ttk.Entry(top,textvariable=self.contact_search,width=40).pack(side='left',padx=7)
+                  self.contact_search.trace_add('write',lambda *_:self.refresh_contacts())
+                  self.contacts_count=tk.StringVar(value='0 contactos')
+                  ttk.Label(top,textvariable=self.contacts_count,foreground=MUTED).pack(side='right')
+                  cols=('name','phone','label','last','rule','count')
+                  self.contacts_tree=ttk.Treeview(f,columns=cols,show='headings',height=16)
+                  for col,head,width in [('name','Nombre',220),('phone','Teléfono',150),('label','Etiqueta',120),('last','Última interacción',155),('rule','Regla',220),('count','Veces',65)]:
+                      self.contacts_tree.heading(col,text=head);self.contacts_tree.column(col,width=width)
+                  self.contacts_tree.pack(fill='both',expand=True,pady=12)
+                  self.contacts_tree.bind('<Double-1>',lambda e:self.edit_contact())
+                  b=ttk.Frame(f);b.pack(fill='x')
+                  ttk.Button(b,text='Editar',command=self.edit_contact).pack(side='left')
+                  ttk.Button(b,text='Copiar número',command=self.copy_contact_number).pack(side='left',padx=5)
+                  ttk.Button(b,text='Eliminar',command=self.remove_contact).pack(side='left')
+                  ttk.Button(b,text='Exportar VCF',command=self.export_contacts_vcf).pack(side='right')
+                  ttk.Button(b,text='Exportar CSV',command=self.export_contacts_csv).pack(side='right',padx=6)
+                  self.refresh_contacts()
+
+              def selected_contact_id(self):
+                  if not hasattr(self,'contacts_tree'):return None
+                  sel=self.contacts_tree.selection()
+                  return int(sel[0]) if sel else None
+
+              def refresh_contacts(self):
+                  if not hasattr(self,'contacts_tree'):return
+                  for item in self.contacts_tree.get_children():self.contacts_tree.delete(item)
+                  pid=self.pid()
+                  if not pid:
+                      self.contacts_count.set('0 contactos')
+                      return
+                  search=self.contact_search.get() if hasattr(self,'contact_search') else ''
+                  rows=C.contacts_for(pid,search)
+                  for row in rows:
+                      self.contacts_tree.insert('', 'end', iid=str(row['id']), values=(row.get('name') or '',row.get('phone') or '',row.get('label') or '',row.get('last_seen') or '',row.get('last_rule') or '',row.get('interactions') or 0))
+                  self.contacts_count.set(f"{len(rows)} contacto{'s' if len(rows)!=1 else ''}")
+
+              def edit_contact(self):
+                  cid=self.selected_contact_id();contact=C.get_contact(cid) if cid else None
+                  if not contact:return
+                  name=simpledialog.askstring('Editar contacto','Nombre:',initialvalue=contact.get('name') or '',parent=self)
+                  if name is None:return
+                  label=simpledialog.askstring('Editar contacto','Etiqueta:',initialvalue=contact.get('label') or '',parent=self)
+                  if label is None:return
+                  note=simpledialog.askstring('Editar contacto','Nota:',initialvalue=contact.get('note') or '',parent=self)
+                  if note is None:return
+                  C.update_contact(cid,name,label,note);self.refresh_contacts()
+
+              def remove_contact(self):
+                  ids=[int(x) for x in self.contacts_tree.selection()] if hasattr(self,'contacts_tree') else []
+                  if not ids:return
+                  if not messagebox.askyesno('Eliminar contactos',f"¿Eliminar {len(ids)} contacto(s)?",parent=self):return
+                  for cid in ids:C.delete_contact(cid)
+                  self.refresh_contacts()
+
+              def copy_contact_number(self):
+                  cid=self.selected_contact_id();contact=C.get_contact(cid) if cid else None
+                  if not contact:return
+                  self.clipboard_clear();self.clipboard_append(contact.get('phone') or '');self.update()
+
+              def export_contacts_csv(self):
+                  pid=self.pid()
+                  if not pid:return
+                  rows=C.contacts_for(pid,'')
+                  if not rows:return messagebox.showinfo('Contactos','No hay contactos para exportar.',parent=self)
+                  path=filedialog.asksaveasfilename(parent=self,defaultextension='.csv',initialfile=f"Contactos_{self.profile_var.get().replace(' ','_')}.csv",filetypes=[('CSV','*.csv')])
+                  if not path:return
+                  with open(path,'w',newline='',encoding='utf-8-sig') as fh:
+                      writer=csv.writer(fh)
+                      writer.writerow(['Nombre','Teléfono','Etiqueta','Nota','Primera interacción','Última interacción','Último mensaje','Última regla','Interacciones'])
+                      for row in rows:
+                          writer.writerow([row.get('name') or '',row.get('phone') or '',row.get('label') or '',row.get('note') or '',row.get('first_seen') or '',row.get('last_seen') or '',row.get('last_message') or '',row.get('last_rule') or '',row.get('interactions') or 0])
+                  messagebox.showinfo('Contactos','CSV exportado correctamente.',parent=self)
+
+              def export_contacts_vcf(self):
+                  pid=self.pid()
+                  if not pid:return
+                  rows=C.contacts_for(pid,'')
+                  if not rows:return messagebox.showinfo('Contactos','No hay contactos para exportar.',parent=self)
+                  path=filedialog.asksaveasfilename(parent=self,defaultextension='.vcf',initialfile=f"Contactos_{self.profile_var.get().replace(' ','_')}.vcf",filetypes=[('vCard','*.vcf')])
+                  if not path:return
+                  def esc(value):
+                      return str(value or '').replace('\\','\\\\').replace(';','\\;').replace(',','\\,').replace('\r','').replace('\n','\\n')
+                  cards=[]
+                  for row in rows:
+                      phone=str(row.get('phone') or '')
+                      name=esc(row.get('name') or ('Cliente '+phone[-4:]))
+                      label=esc(row.get('label') or '')
+                      note=esc(row.get('note') or '')
+                      lines=['BEGIN:VCARD','VERSION:3.0',f'FN:{name}',f'TEL;TYPE=CELL:+{phone.lstrip("+")}']
+                      if label:lines.append(f'CATEGORIES:{label}')
+                      if note:lines.append(f'NOTE:{note}')
+                      lines.append('END:VCARD');cards.append('\r\n'.join(lines))
+                  pathlib.Path(path).write_text('\r\n'.join(cards)+'\r\n',encoding='utf-8')
+                  messagebox.showinfo('Contactos','VCF exportado correctamente.',parent=self)
+          '''
+          contacts_methods = textwrap.indent(textwrap.dedent(contacts_methods).strip() + "\n","    ")
+
+          insert_marker = "        self.refresh_media()\n    def build_status(self):"
+          if insert_marker not in g:
+              raise SystemExit("No se encontró punto para pestaña Contactos")
+          g = g.replace(insert_marker,"        self.refresh_media()\n"+contacts_methods+"    def build_status(self):",1)
+
+          g = g.replace(
+              "    def periodic(self):\n        try:self.refresh_home();self.refresh_whatsapp();self.refresh_logs()\n        except Exception:pass",
+              "    def periodic(self):\n        try:self.refresh_home();self.refresh_whatsapp();self.refresh_contacts();self.refresh_logs()\n        except Exception:pass",
+              1
+          )
+          compile(g,str(gui_path),'exec')
+          gui_path.write_text(g,encoding="utf-8")
+
+          # ---------- Installer ----------
+          t = iss_path.read_text(encoding="utf-8")
+          t = t.replace('2.0.5','2.0.6')
+          t = t.replace('sesiones de WhatsApp, reglas, archivos, estados, logs y demás datos locales','sesiones de WhatsApp, reglas, contactos, archivos, estados, logs y demás datos locales')
+          iss_path.write_text(t,encoding="utf-8")
+          '@ | Set-Content patch_contacts_v206.py -Encoding UTF8
+          python patch_contacts_v206.py
+
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
@@ -433,6 +762,50 @@ jobs:
           '@ | Set-Content test_media_v205.py -Encoding UTF8
           python test_media_v205.py
 
+      - name: Internal contact autosave tests
+        shell: powershell
+        run: |
+          Set-Location "$env:GITHUB_WORKSPACE\pc_local\buildsrc"
+          @'
+          import time
+          import core_local as C
+
+          pid=C.add_profile("TEST CONTACTOS V206")
+          eng=C.Engine()
+          calls=[]
+          C.WUZ.call=lambda *a,**k: calls.append((a,k)) or (200,{"success":True})
+
+          eng.execute_action(
+              pid=pid,token="dummy",route="573001112233@s.whatsapp.net",
+              phone="573001112233",name="Ana Cliente",msg="Hola",
+              a={"type":"save_contact","contact_name":"@nombre","label":"Interesado","note":"Llegó: @mensaje"},
+              rule_name="Captura lead",started=time.perf_counter()
+          )
+          rows=C.contacts_for(pid)
+          assert len(rows)==1, rows
+          row=rows[0]
+          assert row["phone"]=="573001112233"
+          assert row["name"]=="Ana Cliente"
+          assert row["label"]=="Interesado"
+          assert row["note"]=="Llegó: Hola"
+          assert row["interactions"]==1
+          assert calls==[], "save_contact no debe llamar WuzAPI"
+
+          eng.execute_action(
+              pid=pid,token="dummy",route="573001112233@s.whatsapp.net",
+              phone="573001112233",name="Ana Cliente",msg="Segundo",
+              a={"type":"save_contact","contact_name":"@nombre","label":"Interesado"},
+              rule_name="Captura lead",started=time.perf_counter()
+          )
+          rows=C.contacts_for(pid)
+          assert len(rows)==1, "No debe duplicar el mismo número"
+          assert rows[0]["interactions"]==2
+          assert rows[0]["last_message"]=="Segundo"
+
+          print("CONTACT TESTS OK: save_contact + dedupe + counters")
+          '@ | Set-Content test_contacts_v206.py -Encoding UTF8
+          python test_contacts_v206.py
+
       - name: Generate application icon
         shell: powershell
         run: |
@@ -501,12 +874,12 @@ jobs:
         run: |
           Set-Location "$env:GITHUB_WORKSPACE\pc_local\buildsrc"
           & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" installer.iss
-          Get-Item output\MonopolioMultiBotDesktop_Setup_v2.0.5.exe
-          Get-FileHash output\MonopolioMultiBotDesktop_Setup_v2.0.5.exe -Algorithm SHA256 | Format-List
+          Get-Item output\MonopolioMultiBotDesktop_Setup_v2.0.6.exe
+          Get-FileHash output\MonopolioMultiBotDesktop_Setup_v2.0.6.exe -Algorithm SHA256 | Format-List
 
       - name: Upload installer
         uses: actions/upload-artifact@v4
         with:
-          name: MonopolioMultiBotDesktop-Windows-v2.0.5
-          path: pc_local/buildsrc/output/MonopolioMultiBotDesktop_Setup_v2.0.5.exe
+          name: MonopolioMultiBotDesktop-Windows-v2.0.6
+          path: pc_local/buildsrc/output/MonopolioMultiBotDesktop_Setup_v2.0.6.exe
           retention-days: 30
