@@ -471,7 +471,7 @@ google_box = r'''
         ttk.Button(row2,text='Guía Google',command=self.open_google_setup_help).pack(side='right',padx=5)
         self.refresh_google_contacts_status()
 '''
-google_box=textwrap.indent(textwrap.dedent(google_box).strip()+"\n","    ")
+google_box=textwrap.indent(textwrap.dedent(google_box).strip()+"\n","        ")
 g,n=re.subn(
     r"        google=ttk\.LabelFrame\(f,text='Google Contacts \(opcional\)'.*?        self\.refresh_google_contacts_status\(\)\n",
     lambda _m:google_box,
