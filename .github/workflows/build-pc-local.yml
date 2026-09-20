@@ -1,0 +1,103 @@
+name: Build Monopolio MultiBot Desktop
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'pc_local/source.b64'
+      - '.github/workflows/build-pc-local.yml'
+
+permissions:
+  contents: read
+
+env:
+  WUZAPI_COMMIT: 5f0350f3af2abf6900739cc8e23b55700510451d
+
+jobs:
+  build:
+    runs-on: windows-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Decode source
+        shell: powershell
+        run: |
+          New-Item -ItemType Directory -Force pc_local\buildsrc | Out-Null
+          $b64 = Get-Content pc_local\source.b64 -Raw
+          [IO.File]::WriteAllBytes("pc_local\source.zip",[Convert]::FromBase64String($b64))
+          Expand-Archive -Force pc_local\source.zip pc_local\buildsrc
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.26.0'
+
+      - name: Build WuzAPI Windows
+        shell: powershell
+        run: |
+          git clone https://github.com/asternic/wuzapi.git $env:TEMP\wuzapi-local
+          Set-Location $env:TEMP\wuzapi-local
+          git checkout $env:WUZAPI_COMMIT
+          $env:CGO_ENABLED="0"
+          $env:GOOS="windows"
+          $env:GOARCH="amd64"
+          go build -trimpath -ldflags="-s -w" -o "$env:GITHUB_WORKSPACE\pc_local\buildsrc\wuzapi.exe" .
+          Get-Item "$env:GITHUB_WORKSPACE\pc_local\buildsrc\wuzapi.exe"
+
+      - name: Install Python build dependencies
+        shell: powershell
+        run: |
+          Set-Location "$env:GITHUB_WORKSPACE\pc_local\buildsrc"
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt pyinstaller
+
+      - name: Generate application icon
+        shell: powershell
+        run: |
+          Set-Location "$env:GITHUB_WORKSPACE\pc_local\buildsrc"
+          @'
+          from PIL import Image, ImageDraw, ImageFont
+          im=Image.new("RGBA",(256,256),(16,24,39,255))
+          d=ImageDraw.Draw(im)
+          d.ellipse((18,18,238,238),outline=(184,137,34,255),width=14)
+          d.rounded_rectangle((50,62,206,202),radius=30,fill=(10,143,78,255),outline=(184,137,34,255),width=7)
+          try:
+              font=ImageFont.truetype("arialbd.ttf",76)
+          except:
+              font=ImageFont.load_default()
+          d.text((71,89),"MB",font=font,fill=(255,232,166,255))
+          im.save("app.ico",sizes=[(16,16),(32,32),(48,48),(64,64),(128,128),(256,256)])
+          '@ | Set-Content make_icon.py -Encoding UTF8
+          python make_icon.py
+
+      - name: Compile Desktop EXE
+        shell: powershell
+        run: |
+          Set-Location "$env:GITHUB_WORKSPACE\pc_local\buildsrc"
+          pyinstaller --clean --onefile --noconsole --name MonopolioMultiBotDesktop --icon app.ico --add-binary "wuzapi.exe;." --add-data "app.ico;." main_local.py
+          Get-Item dist\MonopolioMultiBotDesktop.exe
+
+      - name: Install Inno Setup
+        shell: powershell
+        run: choco install innosetup -y --no-progress
+
+      - name: Build professional installer
+        shell: powershell
+        run: |
+          Set-Location "$env:GITHUB_WORKSPACE\pc_local\buildsrc"
+          & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" installer.iss
+          Get-Item output\MonopolioMultiBotDesktop_Setup_v2.0.0.exe
+          Get-FileHash output\MonopolioMultiBotDesktop_Setup_v2.0.0.exe -Algorithm SHA256 | Format-List
+
+      - name: Upload installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: MonopolioMultiBotDesktop-Windows-v2.0.0
+          path: pc_local/buildsrc/output/MonopolioMultiBotDesktop_Setup_v2.0.0.exe
+          retention-days: 30
