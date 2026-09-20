@@ -87,7 +87,7 @@ public class BotService extends Service {
                 }catch(Exception e){
                     android.util.Log.e("BotService","sync",e);
                 }
-                Thread.sleep(5000);
+                Thread.sleep(2500);
             }
         }catch(Exception e){
             android.util.Log.e("BotService","fatal",e);
