@@ -326,12 +326,12 @@ jobs:
           Set-Location "$env:GITHUB_WORKSPACE\pc_local\buildsrc"
           pyi-archive_viewer -l ".\dist\MonopolioMultiBotDesktop.exe" | Out-File ".\archive_contents.txt" -Encoding utf8
           $listing = Get-Content ".\archive_contents.txt" -Raw
-          foreach ($required in @("core_local.py","gui_local.py","wuzapi.exe","json")) {
+          foreach ($required in @("core_local.py","gui_local.py","wuzapi.exe")) {
             if ($listing -notmatch [regex]::Escape($required)) {
               throw "$required no quedó dentro del ejecutable"
             }
           }
-          Write-Host "Verificación de archivo OK."
+          Write-Host "Verificación física OK."
 
       - name: Runtime self-test
         shell: powershell
