@@ -125,26 +125,27 @@ jobs:
           compile(s2, str(core_path), 'exec')
           core_path.write_text(s2, encoding="utf-8")
 
-          # Generar un bootstrap de imports reales para que PyInstaller vea
-          # automáticamente todas las dependencias usadas por los módulos dinámicos.
-          def top_imports(path):
+          # Generar un bootstrap con los imports completos exactamente como
+          # aparecen en core_local/gui_local. Esto conserva urllib.error,
+          # urllib.parse, PIL.Image, tkinter.messagebox, etc.
+          def import_statements(path):
               tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
-              mods = set()
+              out = set()
               for node in ast.walk(tree):
-                  if isinstance(node, ast.Import):
-                      for a in node.names:
-                          mods.add(a.name.split('.')[0])
-                  elif isinstance(node, ast.ImportFrom) and node.module:
-                      mods.add(node.module.split('.')[0])
-              return mods
+                  if isinstance(node, (ast.Import, ast.ImportFrom)):
+                      try:
+                          stmt = ast.unparse(node).strip()
+                      except Exception:
+                          continue
+                      if "core_local" in stmt or "gui_local" in stmt:
+                          continue
+                      out.add(stmt)
+              return out
 
-          modules = top_imports(core_path) | top_imports(root / "gui_local.py")
-          modules.discard("core_local")
-          modules.discard("gui_local")
+          statements = import_statements(core_path) | import_statements(root / "gui_local.py")
           lines = ["# Auto-generado para PyInstaller; no editar."]
-          for mod in sorted(modules):
-              if mod.isidentifier():
-                  lines.append(f"try:\n    import {mod}\nexcept Exception:\n    pass")
+          for stmt in sorted(statements):
+              lines.append("try:\n    " + stmt.replace("\n", "\n    ") + "\nexcept Exception:\n    pass")
           (root / "bootstrap_imports.py").write_text("\n".join(lines) + "\n", encoding="utf-8")
 
           # Launcher robusto: core_local y gui_local se empaquetan como recursos físicos.
