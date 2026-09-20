@@ -42,7 +42,7 @@ jobs:
 
           core_path = pathlib.Path(r"pc_local\buildsrc\core_local.py")
           s = core_path.read_text(encoding="utf-8")
-          s = s.replace("APP_VERSION = '2.0.0'", "APP_VERSION = '2.0.1'")
+          s = s.replace("APP_VERSION = '2.0.0'", "APP_VERSION = '2.0.2'")
           new_block = """    def _kill_stale_port(self):
               if os.name != 'nt': return
               try:
@@ -84,9 +84,9 @@ jobs:
 
           iss_path = pathlib.Path(r"pc_local\buildsrc\installer.iss")
           t = iss_path.read_text(encoding="utf-8")
-          t = t.replace('#define MyAppVersion "2.0.0"', '#define MyAppVersion "2.0.1"')
-          t = t.replace('OutputBaseFilename=MonopolioMultiBotDesktop_Setup_v2.0.0', 'OutputBaseFilename=MonopolioMultiBotDesktop_Setup_v2.0.1')
-          t = t.replace('VersionInfoVersion=2.0.0.0', 'VersionInfoVersion=2.0.1.0')
+          t = t.replace('#define MyAppVersion "2.0.0"', '#define MyAppVersion "2.0.2"')
+          t = t.replace('OutputBaseFilename=MonopolioMultiBotDesktop_Setup_v2.0.0', 'OutputBaseFilename=MonopolioMultiBotDesktop_Setup_v2.0.2')
+          t = t.replace('VersionInfoVersion=2.0.0.0', 'VersionInfoVersion=2.0.2.0')
           line = 'Filename: "{cmd}"; Parameters: "/C taskkill /F /IM MonopolioMultiBotHub.exe >nul 2>&1"; Flags: runhidden waituntilterminated'
           if 'taskkill /F /IM wuzapi.exe' not in t:
               t = t.replace(line, line + '\nFilename: "{cmd}"; Parameters: "/C taskkill /F /IM wuzapi.exe >nul 2>&1"; Flags: runhidden waituntilterminated')
@@ -150,7 +150,7 @@ jobs:
         shell: powershell
         run: |
           Set-Location "$env:GITHUB_WORKSPACE\pc_local\buildsrc"
-          pyinstaller --clean --onefile --noconsole --name MonopolioMultiBotDesktop --icon app.ico --add-binary "wuzapi.exe;." --add-data "app.ico;." main_local.py
+          pyinstaller --clean --onefile --noconsole --name MonopolioMultiBotDesktop --icon app.ico --paths "." --hidden-import core_local --hidden-import gui_local --collect-submodules core_local --collect-submodules gui_local --add-binary "wuzapi.exe;." --add-data "app.ico;." main_local.py
           Get-Item dist\MonopolioMultiBotDesktop.exe
 
       - name: Install Inno Setup
@@ -162,12 +162,12 @@ jobs:
         run: |
           Set-Location "$env:GITHUB_WORKSPACE\pc_local\buildsrc"
           & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" installer.iss
-          Get-Item output\MonopolioMultiBotDesktop_Setup_v2.0.1.exe
-          Get-FileHash output\MonopolioMultiBotDesktop_Setup_v2.0.1.exe -Algorithm SHA256 | Format-List
+          Get-Item output\MonopolioMultiBotDesktop_Setup_v2.0.2.exe
+          Get-FileHash output\MonopolioMultiBotDesktop_Setup_v2.0.2.exe -Algorithm SHA256 | Format-List
 
       - name: Upload installer
         uses: actions/upload-artifact@v4
         with:
-          name: MonopolioMultiBotDesktop-Windows-v2.0.1
-          path: pc_local/buildsrc/output/MonopolioMultiBotDesktop_Setup_v2.0.1.exe
+          name: MonopolioMultiBotDesktop-Windows-v2.0.2
+          path: pc_local/buildsrc/output/MonopolioMultiBotDesktop_Setup_v2.0.2.exe
           retention-days: 30
