@@ -795,12 +795,8 @@ jobs:
               s=s[:idx]+google_helpers+"\n\n"+s[idx:]
 
           # Tras guardar/actualizar localmente, sincronizar Google en segundo plano.
-          old_log = """            log(pid,'info',f"Contacto {'guardado' if created else 'actualizado'} · {display_name} · {resolved_phone} · ID {cid}")
-              return"""
-          new_log = """            log(pid,'info',f"Contacto {'guardado' if created else 'actualizado'} · {display_name} · {resolved_phone} · ID {cid}")
-              if google_status(pid).get('connected'):
-                  google_sync_contact_async(cid)
-              return"""
+          old_log = "            log(pid,'info',f\"Contacto {'guardado' if created else 'actualizado'} · {display_name} · {resolved_phone} · ID {cid}\")\n            return"
+          new_log = "            log(pid,'info',f\"Contacto {'guardado' if created else 'actualizado'} · {display_name} · {resolved_phone} · ID {cid}\")\n            if google_status(pid).get('connected'):\n                google_sync_contact_async(cid)\n            return"
           if old_log not in s:
               raise SystemExit("No se encontró acción save_contact para Google")
           s=s.replace(old_log,new_log,1)
