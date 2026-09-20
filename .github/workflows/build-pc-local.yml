@@ -576,6 +576,328 @@ jobs:
           '@ | Set-Content patch_contacts_v206.py -Encoding UTF8
           python patch_contacts_v206.py
 
+          @'
+          import pathlib, re, textwrap
+
+          root = pathlib.Path(r"pc_local\buildsrc")
+          core_path = root / "core_local.py"
+          gui_path = root / "gui_local.py"
+          iss_path = root / "installer.iss"
+
+          # ---------- CORE: Google Contacts opcional ----------
+          s = core_path.read_text(encoding="utf-8")
+          s = s.replace("APP_VERSION = '2.0.6'", "APP_VERSION = '2.0.7'")
+
+          old_import = "import base64, json, mimetypes, os, re, secrets, shutil, sqlite3, subprocess, sys, threading, time, urllib.error, urllib.parse, urllib.request, uuid, zipfile"
+          new_import = "import base64, json, mimetypes, os, re, secrets, shutil, sqlite3, subprocess, sys, threading, time, urllib.error, urllib.parse, urllib.request, uuid, zipfile"
+          if old_import not in s:
+              raise SystemExit("No se encontró import principal")
+          s = s.replace(old_import,new_import,1)
+
+          google_imports = """from google.oauth2.credentials import Credentials
+          from google.auth.transport.requests import Request
+          from google_auth_oauthlib.flow import InstalledAppFlow
+          from googleapiclient.discovery import build as google_build
+          """
+          google_imports = textwrap.dedent(google_imports)
+          import_anchor = "from pathlib import Path\n"
+          if google_imports.strip() not in s:
+              s = s.replace(import_anchor, import_anchor + google_imports, 1)
+
+          dir_anchor = "for p in (MEDIA_DIR, WUZ_DIR, BACKUP_DIR): p.mkdir(parents=True, exist_ok=True)\n"
+          dir_repl = dir_anchor + "GOOGLE_DIR = DATA_DIR / 'google_contacts'\nGOOGLE_DIR.mkdir(parents=True, exist_ok=True)\nGOOGLE_LOCK = threading.RLock()\nGOOGLE_SCOPES = ['https://www.googleapis.com/auth/contacts']\n"
+          if "GOOGLE_SCOPES" not in s:
+              s = s.replace(dir_anchor,dir_repl,1)
+
+          # Migración compatible desde v2.0.6.
+          init_call = "init_db()\n"
+          migration = """init_db()
+
+          def ensure_google_contact_columns():
+              with DB_LOCK, db() as con:
+                  cols={r['name'] for r in con.execute('PRAGMA table_info(contacts)').fetchall()}
+                  if 'google_resource' not in cols:
+                      con.execute("ALTER TABLE contacts ADD COLUMN google_resource TEXT NOT NULL DEFAULT ''")
+                  if 'google_synced_at' not in cols:
+                      con.execute("ALTER TABLE contacts ADD COLUMN google_synced_at TEXT NOT NULL DEFAULT ''")
+                  if 'google_error' not in cols:
+                      con.execute("ALTER TABLE contacts ADD COLUMN google_error TEXT NOT NULL DEFAULT ''")
+                  con.commit()
+
+          ensure_google_contact_columns()
+          """
+          migration = textwrap.dedent(migration)
+          if "ensure_google_contact_columns" not in s:
+              s = s.replace(init_call,migration,1)
+
+          google_helpers = r'''
+          def google_profile_dir(pid):
+              p=GOOGLE_DIR / str(pid)
+              p.mkdir(parents=True,exist_ok=True)
+              return p
+
+          def google_client_file(pid):
+              return google_profile_dir(pid) / 'credentials.json'
+
+          def google_token_file(pid):
+              return google_profile_dir(pid) / 'token.json'
+
+          def google_status(pid):
+              client=google_client_file(pid)
+              token=google_token_file(pid)
+              return {
+                  'configured':client.exists(),
+                  'connected':token.exists(),
+                  'client_file':str(client),
+                  'token_file':str(token),
+              }
+
+          def google_disconnect(pid):
+              token=google_token_file(pid)
+              if token.exists():
+                  try: token.unlink()
+                  except Exception: pass
+
+          def google_connect(pid, source_credentials_json):
+              source=Path(source_credentials_json)
+              if not source.exists():
+                  raise RuntimeError('No se encontró el archivo credentials.json.')
+              try:
+                  raw=json.loads(source.read_text('utf-8'))
+              except Exception as e:
+                  raise RuntimeError(f'El archivo seleccionado no es un JSON válido: {e}')
+              if not isinstance(raw,dict) or ('installed' not in raw and 'web' not in raw):
+                  raise RuntimeError('El JSON no parece ser una credencial OAuth de Google.')
+              target=google_client_file(pid)
+              shutil.copy2(source,target)
+              flow=InstalledAppFlow.from_client_secrets_file(str(target),GOOGLE_SCOPES)
+              creds=flow.run_local_server(
+                  port=0,
+                  open_browser=True,
+                  prompt='consent',
+                  authorization_prompt_message='Se abrirá Google para autorizar Monopolio MultiBot Desktop.'
+              )
+              google_token_file(pid).write_text(creds.to_json(),encoding='utf-8')
+              return True
+
+          def google_credentials(pid):
+              token=google_token_file(pid)
+              client=google_client_file(pid)
+              if not token.exists() or not client.exists():
+                  return None
+              try:
+                  creds=Credentials.from_authorized_user_file(str(token),GOOGLE_SCOPES)
+                  if creds.expired and creds.refresh_token:
+                      creds.refresh(Request())
+                      token.write_text(creds.to_json(),encoding='utf-8')
+                  if not creds.valid:
+                      return None
+                  return creds
+              except Exception:
+                  return None
+
+          def google_service(pid):
+              creds=google_credentials(pid)
+              if not creds:
+                  raise RuntimeError('Google Contacts no está conectado.')
+              return google_build('people','v1',credentials=creds,cache_discovery=False)
+
+          def _digits(value):
+              return re.sub(r'\D+','',str(value or ''))
+
+          def _google_find_phone(service, phone):
+              wanted=_digits(phone)
+              if not wanted:
+                  return ''
+              try:
+                  service.people().searchContacts(
+                      query='',
+                      readMask='names,phoneNumbers',
+                      pageSize=1
+                  ).execute()
+              except Exception:
+                  pass
+              try:
+                  res=service.people().searchContacts(
+                      query=wanted,
+                      readMask='names,phoneNumbers',
+                      pageSize=30
+                  ).execute()
+                  for person in res.get('results',[]) or []:
+                      p=person.get('person') or {}
+                      for ph in p.get('phoneNumbers',[]) or []:
+                          if _digits(ph.get('value'))==wanted:
+                              return p.get('resourceName') or ''
+              except Exception:
+                  pass
+              return ''
+
+          def google_sync_contact(cid):
+              row=get_contact(cid)
+              if not row:
+                  return False
+              pid=row['profile_id']
+              if not google_status(pid).get('connected'):
+                  return False
+              with GOOGLE_LOCK:
+                  try:
+                      service=google_service(pid)
+                      resource=str(row.get('google_resource') or '')
+                      if not resource:
+                          resource=_google_find_phone(service,row.get('phone') or '')
+                      if not resource:
+                          body={
+                              'names':[{'givenName':row.get('name') or ('Cliente '+str(row.get('phone') or '')[-4:])}],
+                              'phoneNumbers':[{'value':'+'+_digits(row.get('phone') or '')}],
+                          }
+                          note=str(row.get('note') or '').strip()
+                          label=str(row.get('label') or '').strip()
+                          if note:
+                              body['biographies']=[{'value':note,'contentType':'TEXT_PLAIN'}]
+                          if label:
+                              body['userDefined']=[{'key':'Etiqueta','value':label}]
+                          created=service.people().createContact(
+                              body=body,
+                              personFields='names,phoneNumbers,userDefined,biographies'
+                          ).execute()
+                          resource=created.get('resourceName') or ''
+                      x(
+                          "UPDATE contacts SET google_resource=?,google_synced_at=?,google_error='' WHERE id=?",
+                          (resource,datetime.now().isoformat(timespec='seconds'),int(cid))
+                      )
+                      log(pid,'info',f'Contacto sincronizado con Google · {row.get("phone") or ""}')
+                      return True
+                  except Exception as e:
+                      x("UPDATE contacts SET google_error=? WHERE id=?",(str(e)[:500],int(cid)))
+                      log(pid,'error',f'Google Contacts: {e}')
+                      return False
+
+          def google_sync_contact_async(cid):
+              def runner():
+                  google_sync_contact(cid)
+              threading.Thread(target=runner,daemon=True,name=f'google-contact-{cid}').start()
+
+          def google_sync_all(pid):
+              rows=contacts_for(pid,'')
+              ok=0
+              for row in rows:
+                  if google_sync_contact(int(row['id'])):
+                      ok+=1
+              return ok,len(rows)
+          '''
+          google_helpers = textwrap.dedent(google_helpers)
+
+          helper_anchor = "def recent_logs(pid=None,limit=400):"
+          if "def google_profile_dir" not in s:
+              idx=s.find(helper_anchor)
+              if idx<0:
+                  raise SystemExit("No se encontró ancla para Google Contacts")
+              s=s[:idx]+google_helpers+"\n\n"+s[idx:]
+
+          # Tras guardar/actualizar localmente, sincronizar Google en segundo plano.
+          old_log = """            log(pid,'info',f"Contacto {'guardado' if created else 'actualizado'} · {display_name} · {resolved_phone} · ID {cid}")
+              return"""
+          new_log = """            log(pid,'info',f"Contacto {'guardado' if created else 'actualizado'} · {display_name} · {resolved_phone} · ID {cid}")
+              if google_status(pid).get('connected'):
+                  google_sync_contact_async(cid)
+              return"""
+          if old_log not in s:
+              raise SystemExit("No se encontró acción save_contact para Google")
+          s=s.replace(old_log,new_log,1)
+
+          compile(s,str(core_path),'exec')
+          core_path.write_text(s,encoding='utf-8')
+
+          # ---------- GUI: configuración sencilla de Google ----------
+          g=gui_path.read_text(encoding='utf-8')
+          g=g.replace("import csv, json, os, threading, tkinter as tk","import csv, json, os, threading, tkinter as tk, webbrowser",1)
+
+          google_ui = r'''
+              def refresh_google_contacts_status(self):
+                  if not hasattr(self,'google_contacts_status'):
+                      return
+                  pid=self.pid()
+                  if not pid:
+                      self.google_contacts_status.set('Sin negocio seleccionado')
+                      return
+                  st=C.google_status(pid)
+                  self.google_contacts_status.set('CONECTADO A GOOGLE' if st.get('connected') else 'Solo guardado local')
+
+              def connect_google_contacts(self):
+                  pid=self.pid()
+                  if not pid:return
+                  path=filedialog.askopenfilename(
+                      parent=self,
+                      title='Selecciona credentials.json de Google',
+                      filetypes=[('JSON de Google','*.json'),('Todos los archivos','*.*')]
+                  )
+                  if not path:return
+                  try:
+                      C.google_connect(pid,path)
+                      self.refresh_google_contacts_status()
+                      messagebox.showinfo('Google Contacts','Google Contacts quedó conectado para este negocio.',parent=self)
+                  except Exception as e:
+                      messagebox.showerror('Google Contacts',str(e),parent=self)
+
+              def disconnect_google_contacts(self):
+                  pid=self.pid()
+                  if not pid:return
+                  C.google_disconnect(pid);self.refresh_google_contacts_status()
+                  messagebox.showinfo('Google Contacts','Se desconectó Google. Los contactos seguirán guardándose localmente.',parent=self)
+
+              def sync_all_google_contacts(self):
+                  pid=self.pid()
+                  if not pid:return
+                  if not C.google_status(pid).get('connected'):
+                      return messagebox.showinfo('Google Contacts','Primero conecta tu cuenta de Google.',parent=self)
+                  def worker():
+                      ok,total=C.google_sync_all(pid)
+                      self.after(0,lambda:messagebox.showinfo('Google Contacts',f'Sincronización terminada: {ok} de {total} contactos.',parent=self))
+                      self.after(0,self.refresh_contacts)
+                  threading.Thread(target=worker,daemon=True,name='google-sync-all').start()
+
+              def open_google_setup_help(self):
+                  webbrowser.open('https://developers.google.com/people/quickstart/python')
+          '''
+          google_ui=textwrap.indent(textwrap.dedent(google_ui).strip()+"\n","    ")
+
+          build_anchor = "    def build_contacts(self):\n"
+          if google_ui.strip() not in g:
+              pos=g.find(build_anchor)
+              if pos<0:
+                  raise SystemExit("No se encontró build_contacts para Google")
+              g=g[:pos]+google_ui+g[pos:]
+
+          desc = "                  ttk.Label(f,text='Los contactos se guardan localmente por negocio cuando una regla usa la acción save_contact. No se duplican por número. Puedes exportarlos a CSV o VCF para llevarlos a otra agenda.',wraplength=980,foreground=MUTED).pack(anchor='w',pady=(2,10))\n"
+          google_box = """                  ttk.Label(f,text='Los contactos siempre se guardan primero en esta PC. Google Contacts es opcional: si lo conectas, cada contacto nuevo se sincroniza en segundo plano; si Google falla o no está configurado, el guardado local sigue funcionando.',wraplength=980,foreground=MUTED).pack(anchor='w',pady=(2,10))
+                  google=ttk.LabelFrame(f,text='Google Contacts (opcional)',padding=10);google.pack(fill='x',pady=(0,10))
+                  self.google_contacts_status=tk.StringVar(value='Solo guardado local')
+                  ttk.Label(google,textvariable=self.google_contacts_status,font=('Segoe UI',10,'bold')).pack(side='left',padx=(0,12))
+                  ttk.Button(google,text='Conectar Google',command=self.connect_google_contacts).pack(side='left')
+                  ttk.Button(google,text='Sincronizar todos',command=self.sync_all_google_contacts).pack(side='left',padx=5)
+                  ttk.Button(google,text='Desconectar',command=self.disconnect_google_contacts).pack(side='left')
+                  ttk.Button(google,text='Guía de configuración',command=self.open_google_setup_help).pack(side='right')
+                  self.refresh_google_contacts_status()
+          """
+          google_box=textwrap.dedent(google_box)
+          if desc not in g:
+              raise SystemExit("No se encontró descripción de Contactos")
+          g=g.replace(desc,google_box,1)
+
+          old_pc = "    def profile_changed(self):self.refresh_home();self.refresh_rules();self.refresh_contacts();self.refresh_status();self.refresh_logs();self.refresh_whatsapp()"
+          new_pc = "    def profile_changed(self):self.refresh_home();self.refresh_rules();self.refresh_contacts();self.refresh_google_contacts_status();self.refresh_status();self.refresh_logs();self.refresh_whatsapp()"
+          g=g.replace(old_pc,new_pc,1)
+
+          compile(g,str(gui_path),'exec')
+          gui_path.write_text(g,encoding='utf-8')
+
+          # ---------- Installer ----------
+          t=iss_path.read_text(encoding='utf-8')
+          t=t.replace('2.0.6','2.0.7')
+          iss_path.write_text(t,encoding='utf-8')
+          '@ | Set-Content patch_google_v207.py -Encoding UTF8
+          python patch_google_v207.py
+
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
@@ -604,6 +926,7 @@ jobs:
           Set-Location "$env:GITHUB_WORKSPACE\pc_local\buildsrc"
           python -m pip install --upgrade pip
           pip install -r requirements.txt pyinstaller
+          pip install google-api-python-client google-auth-httplib2 google-auth-oauthlib
 
       - name: Internal media payload tests
         shell: powershell
@@ -740,6 +1063,58 @@ jobs:
           '@ | Set-Content test_contacts_v206.py -Encoding UTF8
           python test_contacts_v206.py
 
+      - name: Internal Google Contacts tests
+        shell: powershell
+        run: |
+          Set-Location "$env:GITHUB_WORKSPACE\pc_local\buildsrc"
+          @'
+          import time
+          import core_local as C
+
+          pid=C.add_profile("TEST GOOGLE V207")
+          cid,_=C.save_customer_contact(pid,"573009998877","Cliente Google","Lead","Prueba Google","Hola","Regla Google")
+
+          class FakeCreate:
+              def __init__(self,parent,body):
+                  self.parent=parent;self.body=body
+              def execute(self):
+                  self.parent.created.append(self.body)
+                  return {"resourceName":"people/c123"}
+          class FakeSearch:
+              def __init__(self,result):
+                  self.result=result
+              def execute(self):return self.result
+          class FakePeople:
+              def __init__(self):
+                  self.created=[];self.search_calls=[]
+              def searchContacts(self,query,readMask,pageSize):
+                  self.search_calls.append(query)
+                  return FakeSearch({"results":[]})
+              def createContact(self,body,personFields):
+                  return FakeCreate(self,body)
+          class FakeService:
+              def __init__(self):self.p=FakePeople()
+              def people(self):return self.p
+
+          fake=FakeService()
+          C.google_status=lambda _pid: {"connected":True,"configured":True}
+          C.google_service=lambda _pid: fake
+
+          assert C.google_sync_contact(cid) is True
+          row=C.get_contact(cid)
+          assert row["google_resource"]=="people/c123"
+          assert row["google_synced_at"]
+          assert fake.p.created and fake.p.created[0]["phoneNumbers"][0]["value"]=="+573009998877"
+
+          # Segunda sincronización no debe crear un duplicado si ya tiene resourceName.
+          before=len(fake.p.created)
+          assert C.google_sync_contact(cid) is True
+          assert len(fake.p.created)==before
+
+          print("GOOGLE CONTACTS TESTS OK: local fallback metadata + create + no duplicate")
+          '@ | Set-Content test_google_v207.py -Encoding UTF8
+          python test_google_v207.py
+
       - name: Generate application icon
         shell: powershell
         run: |
@@ -808,12 +1183,12 @@ jobs:
         run: |
           Set-Location "$env:GITHUB_WORKSPACE\pc_local\buildsrc"
           & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" installer.iss
-          Get-Item output\MonopolioMultiBotDesktop_Setup_v2.0.6.exe
-          Get-FileHash output\MonopolioMultiBotDesktop_Setup_v2.0.6.exe -Algorithm SHA256 | Format-List
+          Get-Item output\MonopolioMultiBotDesktop_Setup_v2.0.7.exe
+          Get-FileHash output\MonopolioMultiBotDesktop_Setup_v2.0.7.exe -Algorithm SHA256 | Format-List
 
       - name: Upload installer
         uses: actions/upload-artifact@v4
         with:
-          name: MonopolioMultiBotDesktop-Windows-v2.0.6
-          path: pc_local/buildsrc/output/MonopolioMultiBotDesktop_Setup_v2.0.6.exe
+          name: MonopolioMultiBotDesktop-Windows-v2.0.7
+          path: pc_local/buildsrc/output/MonopolioMultiBotDesktop_Setup_v2.0.7.exe
           retention-days: 30
