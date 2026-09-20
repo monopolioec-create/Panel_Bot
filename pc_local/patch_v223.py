@@ -480,41 +480,6 @@ g,n=re.subn(
 if n!=1:
     raise SystemExit("No se pudo reemplazar bloque Google en Contactos")
 
-# Add a visible per-contact Google status column.
-g=g.replace(
-    "cols=('name','phone','label','last','rule','count')",
-    "cols=('name','phone','label','last','rule','google','count')",
-    1
-)
-g=g.replace(
-    "('rule','Regla',220),('count','Veces',65)",
-    "('rule','Regla',190),('google','Google',150),('count','Veces',65)",
-    1
-)
-
-old_insert="""                      self.contacts_tree.insert('', 'end', iid=str(row['id']), values=(row.get('name') or '',row.get('phone') or '',row.get('label') or '',row.get('last_seen') or '',row.get('last_rule') or '',row.get('interactions') or 0))"""
-new_insert="""                      if row.get('google_synced_at'):
-                          google_state='✓ Sincronizado'
-                      elif row.get('google_error'):
-                          google_state='⚠ Error'
-                      else:
-                          google_state='Pendiente'
-                      self.contacts_tree.insert(
-                          '', 'end', iid=str(row['id']),
-                          values=(
-                              row.get('name') or '',
-                              row.get('phone') or '',
-                              row.get('label') or '',
-                              row.get('last_seen') or '',
-                              row.get('last_rule') or '',
-                              google_state,
-                              row.get('interactions') or 0
-                          )
-                      )"""
-if old_insert not in g:
-    raise SystemExit("No se encontró inserción de contactos")
-g=g.replace(old_insert,new_insert,1)
-
 # Clarify save_contact action behavior for the user.
 g=g.replace(
     "Cuando esta regla coincida, el número del cliente se guardará en Contactos. Si ya existe, se omite y no se modifica. Si Google Contacts está conectado, solo los contactos nuevos se sincronizan.",
