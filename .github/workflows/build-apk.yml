@@ -13,7 +13,7 @@ permissions:
   contents: read
 
 env:
-  WUZAPI_COMMIT: 919c72c9750b2a1eedf0fcf9c9592f05fe46f61c
+  WUZAPI_COMMIT: 5f0350f3af2abf6900739cc8e23b55700510451d
   ANDROID_HOME: /usr/local/lib/android/sdk
   ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
 
@@ -41,10 +41,10 @@ jobs:
           "$ANDROID_HOME/build-tools/35.0.0/aapt2" version
           test -x "$ANDROID_HOME/ndk/29.0.14206865/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android24-clang"
 
-      - name: Go 1.25.4
+      - name: Go 1.26.0
         uses: actions/setup-go@v5
         with:
-          go-version: '1.25.4'
+          go-version: '1.26.0'
 
       - name: Build WuzAPI for Android ARM64
         shell: bash
