@@ -3,6 +3,7 @@ import pathlib
 import sys
 
 root=pathlib.Path(sys.argv[1] if len(sys.argv)>1 else r"pc_local\buildsrc")
+sys.path.insert(0,str(root))
 gui_path=root/"gui_local.py"
 core_path=root/"core_local.py"
 
