@@ -5,6 +5,7 @@ import android.util.Log;
 import org.json.JSONArray;
 import org.json.JSONObject;
 import java.io.*;
+import java.net.InetAddress;
 import java.util.*;
 
 public class WuzApiManager {
@@ -23,18 +24,35 @@ public class WuzApiManager {
         e.put("WUZAPI_GLOBAL_WEBHOOK","http://127.0.0.1:1821");
         e.put("WEBHOOK_FORMAT","json"); e.put("WUZAPI_PORT","8080"); e.put("TZ","America/Bogota");
         process=pb.start();
-        new Thread(() -> { try(BufferedReader r=new BufferedReader(new InputStreamReader(process.getInputStream()))){ String l; while((l=r.readLine())!=null) Log.i("WuzAPI",l); }catch(Exception ignored){} },"wuz-log").start();
-        waitReady(); ensureUser();
+        new Thread(() -> {
+            try(BufferedReader r=new BufferedReader(new InputStreamReader(process.getInputStream()))){
+                String l; while((l=r.readLine())!=null){
+                    Log.i("WuzAPI",l);
+                    String low=l.toLowerCase(Locale.ROOT);
+                    if(low.contains("\"level\":\"error\"") || low.contains(" failed ") || low.contains("\"error\"")){
+                        String clip=l.length()>500?l.substring(l.length()-500):l;
+                        Prefs.put(c,"wuz_last_error",clip);
+                    }
+                }
+            }catch(Exception ignored){}
+        },"wuz-log").start();
+        waitReady(25000); ensureUser();
     }
 
-    private void waitReady() throws Exception {
-        Exception last=null;
-        for(int i=0;i<40;i++){
+    public synchronized void restart() throws Exception {
+        stop();
+        Thread.sleep(1200);
+        start();
+    }
+
+    public void waitReady(long timeoutMs) throws Exception {
+        long until=System.currentTimeMillis()+timeoutMs; Exception last=null;
+        while(System.currentTimeMillis()<until){
             try{ HttpJson.Result r=HttpJson.call("GET","http://127.0.0.1:8080/health",null,null); if(r.ok()) return; }
             catch(Exception ex){ last=ex; }
             Thread.sleep(500);
         }
-        throw new IOException("WuzAPI no inició"+(last!=null?": "+last.getMessage():""));
+        throw new IOException("El motor interno no respondió"+(last!=null?": "+last.getMessage():""));
     }
 
     private Map<String,String> adminAuth(){ Map<String,String> h=new HashMap<>(); h.put("Authorization",Prefs.get(c,"wuz_admin","")); return h; }
@@ -50,15 +68,18 @@ public class WuzApiManager {
         }
     }
 
-    public synchronized void stop(){ if(process!=null){ process.destroy(); process=null; } }
+    public synchronized void stop(){ if(process!=null){ process.destroy(); try{process.waitFor();}catch(Exception ignored){} process=null; } }
     public HttpJson.Result get(String path)throws Exception{return HttpJson.call("GET","http://127.0.0.1:8080"+path,null,auth());}
     public HttpJson.Result post(String path,JSONObject b)throws Exception{return HttpJson.call("POST","http://127.0.0.1:8080"+path,b,auth());}
     public JSONObject status(){ try{return get("/session/status").json();}catch(Exception e){return new JSONObject();} }
 
     private boolean isConnected(JSONObject j){
-        JSONObject d=j.optJSONObject("data");
-        if(d==null) d=j;
+        JSONObject d=j.optJSONObject("data"); if(d==null)d=j;
         return d.optBoolean("Connected",false) || d.optBoolean("connected",false) || d.optBoolean("IsConnected",false);
+    }
+    private boolean isLoggedIn(JSONObject j){
+        JSONObject d=j.optJSONObject("data"); if(d==null)d=j;
+        return d.optBoolean("LoggedIn",false) || d.optBoolean("loggedIn",false) || d.optBoolean("IsLoggedIn",false);
     }
 
     private boolean waitConnected(long timeoutMs) throws Exception {
@@ -66,33 +87,55 @@ public class WuzApiManager {
         while(System.currentTimeMillis()<until){
             JSONObject s=status();
             if(isConnected(s)) return true;
-            Thread.sleep(500);
+            Thread.sleep(750);
         }
         return false;
     }
 
+    private void checkInternet() throws Exception {
+        try{
+            InetAddress[] a=InetAddress.getAllByName("web.whatsapp.com");
+            if(a==null || a.length==0) throw new IOException("DNS sin respuesta");
+        }catch(Exception e){
+            throw new IOException("El teléfono no puede resolver los servidores de WhatsApp. Revisa Internet/DNS/VPN.");
+        }
+    }
+
     public JSONObject connect() throws Exception {
+        waitReady(15000);
         if(isConnected(status())) return status();
+        checkInternet();
+
         JSONObject b=new JSONObject();
         b.put("Subscribe",new JSONArray().put("Message"));
-        // WuzAPI: Immediate=false espera confirmación de la conexión websocket.
-        b.put("Immediate",false);
+        // Immediate=true evita el límite interno de 10 s de WuzAPI.
+        // La app hace su propia espera hasta que Connected=true.
+        b.put("Immediate",true);
         HttpJson.Result r=post("/session/connect",b);
-        if(!(r.ok()||r.code==409)) throw new IOException(r.body);
-        if(!waitConnected(15000)) throw new IOException("WhatsApp no alcanzó a conectar el websocket interno");
-        return status();
+
+        // Incluso si WuzAPI devuelve un error transitorio, el goroutine de conexión
+        // puede seguir trabajando; por eso esperamos el estado real.
+        if(waitConnected(75000)) return status();
+
+        String detail=Prefs.get(c,"wuz_last_error","");
+        String base=(r.body==null?"":r.body);
+        throw new IOException("No fue posible abrir la conexión con WhatsApp en 75 s"
+            +(detail.isEmpty()?(base.isEmpty()?"":" · "+base):" · Detalle: "+detail));
     }
 
     public String pairPhone(String phone)throws Exception{
         String clean=phone==null?"":phone.replaceAll("[^0-9]","");
         if(clean.length()<8) throw new IOException("Número de WhatsApp inválido");
 
+        waitReady(20000);
+        if(!isConnected(status())) connect();
+
         Exception last=null;
         for(int attempt=1; attempt<=3; attempt++){
             try{
-                if(!isConnected(status())) connect();
-                if(!waitConnected(5000)) throw new IOException("websocket aún no conectado");
-
+                if(!isConnected(status())){
+                    connect();
+                }
                 JSONObject b=new JSONObject().put("Phone",clean);
                 HttpJson.Result res=post("/session/pairphone",b);
                 JSONObject j=res.json();
@@ -101,20 +144,18 @@ public class WuzApiManager {
                 if(code.isEmpty()) code=j.optString("linkingCode","");
                 if(!code.isEmpty()) return code;
 
-                String err=j.optString("error",res.body);
-                if(err!=null && err.toLowerCase().contains("websocket")){
-                    last=new IOException(err);
-                    Thread.sleep(1500L*attempt);
-                    continue;
-                }
-                throw new IOException("No se recibió código: "+j);
+                String err=j.optString("error",res.body==null?"":res.body);
+                last=new IOException(err.isEmpty()?"No se recibió código":err);
+                Thread.sleep(1500L*attempt);
             }catch(Exception e){
                 last=e;
-                Thread.sleep(1200L*attempt);
+                Thread.sleep(1500L*attempt);
             }
         }
-        throw new IOException(last!=null?last.getMessage():"No fue posible conectar con WhatsApp");
+        throw new IOException(last!=null?last.getMessage():"No fue posible generar el código de WhatsApp");
     }
+
+    public boolean loggedIn(){ return isLoggedIn(status()); }
 
     public HttpJson.Result sendText(String phone,String text)throws Exception{return post("/chat/send/text",new JSONObject().put("Phone",phone).put("Body",text));}
     public HttpJson.Result sendImage(String phone,String data,String caption)throws Exception{return post("/chat/send/image",new JSONObject().put("Phone",phone).put("Image",data).put("Caption",caption));}
