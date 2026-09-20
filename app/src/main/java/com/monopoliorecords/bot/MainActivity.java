@@ -71,7 +71,7 @@ public class MainActivity extends Activity {
         stop.setOnClickListener(v->{Prefs.putBool(this,"auto_start",false);stopService(new Intent(this,BotService.class));ui("Bot detenido");});
 
         TextView help=title("El bot trabaja mediante una notificación persistente de Android. No necesita abrir WhatsApp ni mover la pantalla.",14);l.addView(help);
-        TextView version=title("Versión 0.3.0",12);version.setGravity(Gravity.CENTER_HORIZONTAL);version.setTextColor(Color.GRAY);l.addView(version);
+        TextView version=title("Versión 0.4.0",12);version.setGravity(Gravity.CENTER_HORIZONTAL);version.setTextColor(Color.GRAY);l.addView(version);
         setContentView(sv);
     }
     private void startBot(){Intent i=new Intent(this,BotService.class);if(Build.VERSION.SDK_INT>=26)startForegroundService(i);else startService(i);}
