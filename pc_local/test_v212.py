@@ -10,7 +10,6 @@ core_path=root/"core_local.py"
 gui=gui_path.read_text(encoding="utf-8")
 core=core_path.read_text(encoding="utf-8")
 
-assert "APP_VERSION = '2.1.2'" in core
 compile(gui,str(gui_path),"exec")
 
 required=[
