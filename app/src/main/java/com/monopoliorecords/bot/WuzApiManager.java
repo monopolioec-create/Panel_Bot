@@ -16,7 +16,7 @@ public class WuzApiManager {
         if(process!=null && process.isAlive()) return;
         work=StorageBootstrap.prepare(c);
         String bin=c.getApplicationInfo().nativeLibraryDir+"/libwuzapi.so";
-        ProcessBuilder pb=new ProcessBuilder(bin,"-skipmedia","-logtype","json","-address","127.0.0.1","-port","8080","-osname","Monopoly Records","-datadir",work.getAbsolutePath());
+        ProcessBuilder pb=new ProcessBuilder(bin,"-skipmedia","-logtype","json","-address","127.0.0.1","-port","8080","-osname","Monopolio Records","-datadir",work.getAbsolutePath());
         pb.directory(work); pb.redirectErrorStream(true);
         Map<String,String> e=pb.environment();
         String admin=Prefs.get(c,"wuz_admin",""); if(admin.isEmpty()){admin=Prefs.randomHex(16);Prefs.put(c,"wuz_admin",admin);}
