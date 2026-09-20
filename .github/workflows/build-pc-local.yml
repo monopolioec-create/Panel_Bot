@@ -1124,7 +1124,7 @@ jobs:
         shell: powershell
         run: |
           Set-Location "$env:GITHUB_WORKSPACE\pc_local\buildsrc"
-          pyinstaller --clean --onefile --noconsole --name MonopolioMultiBotDesktop --icon app.ico --paths "." --hidden-import bootstrap_imports --add-binary "wuzapi.exe;." --add-data "app.ico;." --add-data "core_local.py;." --add-data "gui_local.py;." main_local.py
+          pyinstaller --clean --onefile --noconsole --name MonopolioMultiBotDesktop --icon app.ico --paths "." --hidden-import bootstrap_imports --hidden-import google.oauth2.credentials --hidden-import google.auth.transport.requests --hidden-import google_auth_oauthlib.flow --hidden-import googleapiclient.discovery --collect-submodules google --collect-submodules google_auth_oauthlib --collect-submodules googleapiclient --add-binary "wuzapi.exe;." --add-data "app.ico;." --add-data "core_local.py;." --add-data "gui_local.py;." main_local.py
           Get-Item dist\MonopolioMultiBotDesktop.exe
 
       - name: Verify packaged modules
