@@ -54,15 +54,68 @@ public class WuzApiManager {
     public HttpJson.Result get(String path)throws Exception{return HttpJson.call("GET","http://127.0.0.1:8080"+path,null,auth());}
     public HttpJson.Result post(String path,JSONObject b)throws Exception{return HttpJson.call("POST","http://127.0.0.1:8080"+path,b,auth());}
     public JSONObject status(){ try{return get("/session/status").json();}catch(Exception e){return new JSONObject();} }
-    public JSONObject connect() throws Exception { JSONObject b=new JSONObject(); b.put("Subscribe",new JSONArray().put("Message")); b.put("Immediate",true); HttpJson.Result r=post("/session/connect",b); if(!(r.ok()||r.code==409)) throw new IOException(r.body); return r.json(); }
-    public String pairPhone(String phone)throws Exception{
-        try{ connect(); Thread.sleep(1200); }catch(Exception ignored){}
-        JSONObject b=new JSONObject().put("Phone",phone.replaceAll("[^0-9]",""));
-        JSONObject j=post("/session/pairphone",b).json();
-        JSONObject data=j.optJSONObject("data"); String code=data!=null?data.optString("LinkingCode",""):j.optString("LinkingCode","");
-        if(code.isEmpty()) code=j.optString("linkingCode","");
-        if(code.isEmpty()) throw new IOException("No se recibió código: "+j); return code;
+
+    private boolean isConnected(JSONObject j){
+        JSONObject d=j.optJSONObject("data");
+        if(d==null) d=j;
+        return d.optBoolean("Connected",false) || d.optBoolean("connected",false) || d.optBoolean("IsConnected",false);
     }
+
+    private boolean waitConnected(long timeoutMs) throws Exception {
+        long until=System.currentTimeMillis()+timeoutMs;
+        while(System.currentTimeMillis()<until){
+            JSONObject s=status();
+            if(isConnected(s)) return true;
+            Thread.sleep(500);
+        }
+        return false;
+    }
+
+    public JSONObject connect() throws Exception {
+        if(isConnected(status())) return status();
+        JSONObject b=new JSONObject();
+        b.put("Subscribe",new JSONArray().put("Message"));
+        // WuzAPI: Immediate=false espera confirmación de la conexión websocket.
+        b.put("Immediate",false);
+        HttpJson.Result r=post("/session/connect",b);
+        if(!(r.ok()||r.code==409)) throw new IOException(r.body);
+        if(!waitConnected(15000)) throw new IOException("WhatsApp no alcanzó a conectar el websocket interno");
+        return status();
+    }
+
+    public String pairPhone(String phone)throws Exception{
+        String clean=phone==null?"":phone.replaceAll("[^0-9]","");
+        if(clean.length()<8) throw new IOException("Número de WhatsApp inválido");
+
+        Exception last=null;
+        for(int attempt=1; attempt<=3; attempt++){
+            try{
+                if(!isConnected(status())) connect();
+                if(!waitConnected(5000)) throw new IOException("websocket aún no conectado");
+
+                JSONObject b=new JSONObject().put("Phone",clean);
+                HttpJson.Result res=post("/session/pairphone",b);
+                JSONObject j=res.json();
+                JSONObject data=j.optJSONObject("data");
+                String code=data!=null?data.optString("LinkingCode",""):j.optString("LinkingCode","");
+                if(code.isEmpty()) code=j.optString("linkingCode","");
+                if(!code.isEmpty()) return code;
+
+                String err=j.optString("error",res.body);
+                if(err!=null && err.toLowerCase().contains("websocket")){
+                    last=new IOException(err);
+                    Thread.sleep(1500L*attempt);
+                    continue;
+                }
+                throw new IOException("No se recibió código: "+j);
+            }catch(Exception e){
+                last=e;
+                Thread.sleep(1200L*attempt);
+            }
+        }
+        throw new IOException(last!=null?last.getMessage():"No fue posible conectar con WhatsApp");
+    }
+
     public HttpJson.Result sendText(String phone,String text)throws Exception{return post("/chat/send/text",new JSONObject().put("Phone",phone).put("Body",text));}
     public HttpJson.Result sendImage(String phone,String data,String caption)throws Exception{return post("/chat/send/image",new JSONObject().put("Phone",phone).put("Image",data).put("Caption",caption));}
     public HttpJson.Result sendVideo(String phone,String data,String caption)throws Exception{return post("/chat/send/video",new JSONObject().put("Phone",phone).put("Video",data).put("Caption",caption));}
