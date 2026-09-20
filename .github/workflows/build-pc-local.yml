@@ -13,6 +13,8 @@ on:
       - 'pc_local/test_v220.py'
       - 'pc_local/patch_v221.py'
       - 'pc_local/test_v221.py'
+      - 'pc_local/patch_v222.py'
+      - 'pc_local/test_v222.py'
       - '.github/workflows/build-pc-local.yml'
 
 permissions:
@@ -1603,6 +1605,14 @@ jobs:
           python pc_local\patch_v221.py pc_local\buildsrc
           python pc_local\test_v221.py pc_local\buildsrc
 
+      - name: Apply and test v2.2.2 media previews
+        shell: powershell
+        run: |
+          Set-Location "$env:GITHUB_WORKSPACE"
+          python pc_local\patch_v222.py pc_local\buildsrc
+          python -m pip install imageio-ffmpeg
+          python pc_local\test_v222.py pc_local\buildsrc
+
       - name: Generate application icon
         shell: powershell
         run: |
@@ -1626,7 +1636,7 @@ jobs:
         shell: powershell
         run: |
           Set-Location "$env:GITHUB_WORKSPACE\pc_local\buildsrc"
-          pyinstaller --clean --onefile --noconsole --name MonopolioMultiBotDesktop --icon app.ico --paths "." --hidden-import bootstrap_imports --hidden-import PIL.Image --hidden-import PIL.ImageTk --hidden-import calendar --hidden-import google.oauth2.credentials --hidden-import google.auth.transport.requests --hidden-import google_auth_oauthlib.flow --hidden-import googleapiclient.discovery --collect-submodules google --collect-submodules google_auth_oauthlib --collect-submodules googleapiclient --add-binary "wuzapi.exe;." --add-data "app.ico;." --add-data "core_local.py;." --add-data "gui_local.py;." main_local.py
+          pyinstaller --clean --onefile --noconsole --name MonopolioMultiBotDesktop --icon app.ico --paths "." --hidden-import imageio_ffmpeg --collect-all imageio_ffmpeg --hidden-import bootstrap_imports --hidden-import PIL.Image --hidden-import PIL.ImageTk --hidden-import calendar --hidden-import google.oauth2.credentials --hidden-import google.auth.transport.requests --hidden-import google_auth_oauthlib.flow --hidden-import googleapiclient.discovery --collect-submodules google --collect-submodules google_auth_oauthlib --collect-submodules googleapiclient --add-binary "wuzapi.exe;." --add-data "app.ico;." --add-data "core_local.py;." --add-data "gui_local.py;." main_local.py
           Get-Item dist\MonopolioMultiBotDesktop.exe
 
       - name: Verify packaged modules
@@ -1671,12 +1681,12 @@ jobs:
         run: |
           Set-Location "$env:GITHUB_WORKSPACE\pc_local\buildsrc"
           & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" installer.iss
-          Get-Item output\MonopolioMultiBotDesktop_Setup_v2.2.1.exe
-          Get-FileHash output\MonopolioMultiBotDesktop_Setup_v2.2.1.exe -Algorithm SHA256 | Format-List
+          Get-Item output\MonopolioMultiBotDesktop_Setup_v2.2.2.exe
+          Get-FileHash output\MonopolioMultiBotDesktop_Setup_v2.2.2.exe -Algorithm SHA256 | Format-List
 
       - name: Upload installer
         uses: actions/upload-artifact@v4
         with:
-          name: MonopolioMultiBotDesktop-Windows-v2.2.1
-          path: pc_local/buildsrc/output/MonopolioMultiBotDesktop_Setup_v2.2.1.exe
+          name: MonopolioMultiBotDesktop-Windows-v2.2.2
+          path: pc_local/buildsrc/output/MonopolioMultiBotDesktop_Setup_v2.2.2.exe
           retention-days: 30
