@@ -179,8 +179,10 @@ jobs:
               try:
                   sys.exit(_self_test())
               except Exception:
-                  import traceback
-                  traceback.print_exc()
+                  import tempfile, traceback
+                  report = os.path.join(tempfile.gettempdir(), 'multibot-selftest.txt')
+                  with open(report, 'w', encoding='utf-8') as fh:
+                      traceback.print_exc(file=fh)
                   sys.exit(2)
 
           C = _load_module('core_local')
@@ -343,6 +345,12 @@ jobs:
             throw "El self-test del ejecutable superó 20 segundos."
           }
           if ($p.ExitCode -ne 0) {
+            $report = Join-Path $env:TEMP "multibot-selftest.txt"
+            if (Test-Path $report) {
+              Write-Host "----- SELF TEST TRACEBACK -----"
+              Get-Content $report
+              Write-Host "----- END TRACEBACK -----"
+            }
             throw "El self-test del ejecutable falló. ExitCode=$($p.ExitCode)"
           }
           Write-Host "Runtime self-test OK."
