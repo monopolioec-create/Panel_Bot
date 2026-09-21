@@ -142,6 +142,18 @@ s=s.replace(
 # =========================================================
 # GUIDED FLOW: key by phone OR route JID
 # =========================================================
+# Preserve the complete JID when no public phone is available.
+s=s.replace(
+    "guided_flow_set(pid,phone or str(route).split('@',1)[0],a)",
+    "guided_flow_set(pid,phone or route,a)",
+    1
+)
+s=s.replace(
+    "                phone or str(route).split('@',1)[0],\n",
+    "                phone or route,\n",
+    1
+)
+
 for old,new in [
     ("    phone=normalize_contact_phone(phone)\n    if not phone:return None\n    return q(\n        'SELECT * FROM guided_flows WHERE profile_id=? AND phone=?',",
      "    phone=conversation_key(phone)\n    if not phone:return None\n    return q(\n        'SELECT * FROM guided_flows WHERE profile_id=? AND phone=?',"),
