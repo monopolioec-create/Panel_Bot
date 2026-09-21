@@ -17,6 +17,8 @@ on:
       - 'pc_local/test_v222.py'
       - 'pc_local/patch_v223.py'
       - 'pc_local/test_v223.py'
+      - 'pc_local/patch_v224.py'
+      - 'pc_local/test_v224.py'
       - '.github/workflows/build-pc-local.yml'
 
 permissions:
@@ -1622,6 +1624,13 @@ jobs:
           python pc_local\patch_v223.py pc_local\buildsrc
           python pc_local\test_v223.py pc_local\buildsrc
 
+      - name: Apply and test v2.2.4 Contacts navigation
+        shell: powershell
+        run: |
+          Set-Location "$env:GITHUB_WORKSPACE"
+          python pc_local\patch_v224.py pc_local\buildsrc
+          python pc_local\test_v224.py pc_local\buildsrc
+
       - name: Generate application icon
         shell: powershell
         run: |
@@ -1690,12 +1699,12 @@ jobs:
         run: |
           Set-Location "$env:GITHUB_WORKSPACE\pc_local\buildsrc"
           & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" installer.iss
-          Get-Item output\MonopolioMultiBotDesktop_Setup_v2.2.3.exe
-          Get-FileHash output\MonopolioMultiBotDesktop_Setup_v2.2.3.exe -Algorithm SHA256 | Format-List
+          Get-Item output\MonopolioMultiBotDesktop_Setup_v2.2.4.exe
+          Get-FileHash output\MonopolioMultiBotDesktop_Setup_v2.2.4.exe -Algorithm SHA256 | Format-List
 
       - name: Upload installer
         uses: actions/upload-artifact@v4
         with:
-          name: MonopolioMultiBotDesktop-Windows-v2.2.3
-          path: pc_local/buildsrc/output/MonopolioMultiBotDesktop_Setup_v2.2.3.exe
+          name: MonopolioMultiBotDesktop-Windows-v2.2.4
+          path: pc_local/buildsrc/output/MonopolioMultiBotDesktop_Setup_v2.2.4.exe
           retention-days: 30
