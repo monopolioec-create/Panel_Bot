@@ -1,0 +1,49 @@
+name: Build MR Player APK
+
+on:
+  push:
+    branches:
+      - mr-player-build-20260921
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up Java
+        uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v4.0.4
+
+      - name: Install Android 35
+        run: sdkmanager "platform-tools" "platforms;android-35" "build-tools;35.0.0"
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v6
+        with:
+          gradle-version: '8.9'
+
+      - name: Build installable APK
+        working-directory: mr_player/android
+        run: gradle :app:assembleDebug --no-daemon --stacktrace
+
+      - name: Prepare artifact
+        run: |
+          cp mr_player/android/app/build/outputs/apk/debug/app-debug.apk MR_Player.apk
+          sha256sum MR_Player.apk
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v7
+        with:
+          name: MR_Player_APK
+          path: MR_Player.apk
+          if-no-files-found: error
