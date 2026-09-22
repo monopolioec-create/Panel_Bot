@@ -1,0 +1,126 @@
+ew pl = tv((config.playlistName == null || config.playlistName.isEmpty()) ? "TV DIGITAL" : config.playlistName, 14, MUTED, false);
+        bottom.addView(pl, new LinearLayout.LayoutParams(0, dp(34), 1));
+        TextView ver = tv("v2.0", 14, MUTED, false);
+        ver.setGravity(Gravity.END | Gravity.CENTER_VERTICAL);
+        bottom.addView(ver, new LinearLayout.LayoutParams(dp(100), dp(34)));
+        all.addView(bottom, new LinearLayout.LayoutParams(-1, dp(38)));
+        root.addView(stage, new FrameLayout.LayoutParams(-1, -1));
+        cards.getChildAt(0).requestFocus();
+
+        List<XtreamApi.Item> movies = cachedItems("movie");
+        if (movies != null) {
+            XtreamApi.Item featured = null;
+            for (XtreamApi.Item x : movies) if (!x.icon.isEmpty() || !x.backdrop.isEmpty()) { featured = x; break; }
+            XtreamApi.Item f = featured;
+            if (f != null) {
+                String img = !f.backdrop.isEmpty() ? f.backdrop : f.icon;
+                ImageLoader.load(hero, img, Color.rgb(16, 28, 32));
+            }
+        }
+    }
+
+    private void addConfiguredHomeCards(LinearLayout cards){
+        String order=(config==null||config.homeOrder==null||config.homeOrder.trim().isEmpty())?"live,movie,series,sports,playlist":config.homeOrder;
+        Set<String> added=new HashSet<>();
+        for(String raw:order.split(",")){String k=raw.trim().toLowerCase(Locale.ROOT);if(k.isEmpty()||!added.add(k))continue;addHomeCardByKey(cards,k);}
+        String[] defaults={"live","movie","series","sports","playlist"};for(String k:defaults)if(!added.contains(k))addHomeCardByKey(cards,k);
+    }
+    private void addHomeCardByKey(LinearLayout cards,String k){
+        if("live".equals(k))cards.addView(homeCard(config==null?"▣":config.iconLive,t("TV en vivo","Live TV"),()->loadSection("live","")),cardLp());
+        else if("movie".equals(k))cards.addView(homeCard(config==null?"▶":config.iconMovie,t("Películas","Movies"),()->loadSection("movie","")),cardLp());
+        else if("series".equals(k))cards.addView(homeCard(config==null?"▤":config.iconSeries,t("Series","Series"),()->loadSection("series","")),cardLp());
+        else if("sports".equals(k))cards.addView(homeCard(config==null?"◉":config.iconSports,t("Sports","Sports"),()->loadSection("live","sport")),cardLp());
+        else if("playlist".equals(k))cards.addView(homeCard(config==null?"⇄":config.iconPlaylist,t("Cambiar lista","Switch playlist"),this::showPlaylistPanelInfo),cardLp());
+    }
+
+    private LinearLayout.LayoutParams cardLp() {
+        LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(0, -1, 1);
+        p.setMargins(dp(8), 0, dp(8), 0);
+        return p;
+    }
+
+    private View homeCard(String icon, String label, Runnable action) {
+        LinearLayout c = new LinearLayout(this);
+        c.setOrientation(LinearLayout.VERTICAL);
+        c.setGravity(Gravity.CENTER);
+        c.setPadding(dp(10), dp(12), dp(10), dp(10));
+        c.setFocusable(true);
+        c.setClickable(true);
+        updateCardBackground(c, false);
+        TextView i = tv(icon, 43, TEXT, true);
+        i.setGravity(Gravity.CENTER);
+        TextView l = tv(label, 17, TEXT, false);
+        l.setGravity(Gravity.CENTER);
+        c.addView(i, new LinearLayout.LayoutParams(-1, 0, 1));
+        c.addView(l, new LinearLayout.LayoutParams(-1, dp(46)));
+        wireAction(c, action);
+        c.setOnFocusChangeListener((v, h) -> {
+            updateCardBackground(v, h);
+            v.animate().scaleX(h ? 1.045f : 1f).scaleY(h ? 1.045f : 1f).setDuration(110).start();
+        });
+        return c;
+    }
+
+    private void updateCardBackground(View v, boolean focused) {
+        GradientDrawable g = new GradientDrawable(GradientDrawable.Orientation.TL_BR,
+                focused ? new int[]{Color.argb(245, 13, 65, 71), Color.argb(245, 4, 24, 29)} : new int[]{Color.argb(225, 12, 41, 46), Color.argb(225, 4, 18, 22)});
+        g.setCornerRadius(dp(14));
+        g.setStroke(dp(focused ? 2 : 1), focused ? SELECTED : BORDER);
+        v.setBackground(g);
+    }
+
+    private void loadSection(String kind, String preferred) {
+        preferredCategoryName = preferred == null ? "" : preferred.toLowerCase(Locale.US);
+        sectionKind = kind;
+        screen = "section";
+        List<XtreamApi.Category> cachedCats = cachedCategories(kind);
+        List<XtreamApi.Item> cached = cachedItems(kind);
+        if (cachedCats != null && cached != null) {
+            applySectionData(kind, cachedCats, cached);
+            showSectionUI();
+            return;
+        }
+        // Fallback without replacing the screen with a loading spinner.
+        sectionCategories = new ArrayList<>();
+        sectionAll = new ArrayList<>();
+        selectedCategory = "__all";
+        showSectionUI();
+        io.execute(() -> {
+            try {
+                List<XtreamApi.Category> cats = XtreamApi.categories(config, kind);
+                List<XtreamApi.Item> items = XtreamApi.items(config, kind);
+                catalogCategories.put(kind, new ArrayList<>(cats));
+                catalogItems.put(kind, new ArrayList<>(items));
+                ui.post(() -> { applySectionData(kind, cats, items); showSectionUI(); });
+            } catch (Exception e) {
+                ui.post(() -> showError(t("No se pudo cargar el contenido", "Could not load content"), e, this::showHome));
+            }
+        });
+    }
+
+    private void applySectionData(String kind, List<XtreamApi.Category> cats, List<XtreamApi.Item> items) {
+        Set<String> hidden = prefs.hiddenCategories(kind);
+        List<XtreamApi.Category> visible = new ArrayList<>();
+        for (XtreamApi.Category c : cats) {
+            if (hidden.contains(c.id)) continue;
+            // Adult categories stay visible with a lock; PIN is requested on entry.
+            visible.add(c);
+        }
+        sectionCategories = visible;
+        sectionAll = new ArrayList<>(items);
+        selectedCategory = "__all";
+        if (!preferredCategoryName.isEmpty()) {
+            for (XtreamApi.Category c : visible) if (c.name.toLowerCase(Locale.US).contains(preferredCategoryName)) { selectedCategory = c.id; break; }
+        }
+    }
+
+    private void showSectionUI() {
+        screen = "section";
+        releasePlayer(false);
+        root.removeAllViews();
+        root.setBackgroundColor(BG);
+
+        LinearLayout all = new LinearLayout(this);
+        all.setOrientation(LinearLayout.VERTICAL);
+
+        all.addView(topNav(), new LinearLa
