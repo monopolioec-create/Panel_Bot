@@ -1,0 +1,102 @@
+name: Build TV DIGITAL Final v3.1.0
+
+on:
+  push:
+    branches:
+      - tv-digital-final-v310-20260922
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Reconstruct v3.1.0 source
+        run: |
+          cat tv_v310/source.00 tv_v310/source.01 tv_v310/source.02 tv_v310/source.03 > /tmp/source.b64
+          base64 -d /tmp/source.b64 > /tmp/TV_DIGITAL_v310_Source.zip
+          sha256sum /tmp/TV_DIGITAL_v310_Source.zip
+          test "$(sha256sum /tmp/TV_DIGITAL_v310_Source.zip | awk '{print $1}')" = "326a402ee1af2ef9170d8284075e481bd7650ca947a5a21d863e9d4a377eb2ad"
+          unzip -t /tmp/TV_DIGITAL_v310_Source.zip
+          mkdir -p buildsrc
+          unzip -q /tmp/TV_DIGITAL_v310_Source.zip -d buildsrc
+          test -f buildsrc/android/app/src/main/java/com/monopolio/mediaplayeribo/MainActivity.java
+
+      - name: Reconstruct TV DIGITAL application icon
+        run: |
+          cat tv_v310/icon.00 tv_v310/icon.01 tv_v310/icon.02 > /tmp/icon.b64
+          base64 -d /tmp/icon.b64 > /tmp/tv_digital_icon.png
+          sha256sum /tmp/tv_digital_icon.png
+          test "$(sha256sum /tmp/tv_digital_icon.png | awk '{print $1}')" = "4daf427e1afba0cc66ae181d8ddafff3b69449632bd75710d45d61ebbfd2684e"
+          file /tmp/tv_digital_icon.png
+          mkdir -p buildsrc/android/app/src/main/res/drawable-nodpi
+          cp /tmp/tv_digital_icon.png buildsrc/android/app/src/main/res/drawable-nodpi/tv_digital_icon.png
+
+      - name: Functional audit
+        run: |
+          MAIN=buildsrc/android/app/src/main/java/com/monopolio/mediaplayeribo/MainActivity.java
+          PREF=buildsrc/android/app/src/main/java/com/monopolio/mediaplayeribo/AppPrefs.java
+          API=buildsrc/android/app/src/main/java/com/monopolio/mediaplayeribo/PanelApi.java
+          XT=buildsrc/android/app/src/main/java/com/monopolio/mediaplayeribo/XtreamApi.java
+
+          grep -q 'shouldUseExternalForVod' "$MAIN"
+          grep -q 'prefs.playerMode("external")' "$MAIN"
+          grep -q 'externalPackage' "$PREF"
+          grep -q 'MimeTypes.APPLICATION_M3U8' "$MAIN"
+          grep -q 'MimeTypes.VIDEO_MP2T' "$MAIN"
+          grep -q 'liveFormat' "$PREF"
+          grep -q 'm3u8' "$XT"
+          grep -q 'requestParentalPin' "$MAIN"
+          grep -q 'verifyCurrentPin' "$MAIN"
+          grep -q 'adult' "$MAIN"
+          grep -q 'heroCategoryQuery' "$API"
+          grep -q 'heroStaticUrl' "$API"
+          grep -q 'heroIntervalMs' "$API"
+          grep -q 'estreno' "$MAIN"
+          grep -q 'selectedCategoryLabel' "$MAIN"
+          grep -q 'heroMode' "$API"
+          grep -q 'homeOrder' "$API"
+          grep -q 'accentColor' "$API"
+          grep -q 'brandLogoUrl' "$API"
+          grep -q 'tv_digital_icon' buildsrc/android/app/src/main/AndroidManifest.xml
+
+          echo "FUNCTIONAL AUDIT PASS"
+
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: android-actions/setup-android@v4.0.4
+
+      - name: Install Android SDK
+        run: sdkmanager "platform-tools" "platforms;android-35" "build-tools;35.0.0"
+
+      - uses: gradle/actions/setup-gradle@v6
+        with:
+          gradle-version: '8.9'
+
+      - name: Compile Java
+        working-directory: buildsrc/android
+        run: gradle :app:compileDebugJavaWithJavac --no-daemon --stacktrace
+
+      - name: Build installable APK
+        working-directory: buildsrc/android
+        run: gradle :app:assembleDebug --no-daemon --stacktrace
+
+      - name: Verify final package
+        run: |
+          cp buildsrc/android/app/build/outputs/apk/debug/app-debug.apk TV_DIGITAL_Final_v3_1_0.apk
+          unzip -t TV_DIGITAL_Final_v3_1_0.apk
+          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging TV_DIGITAL_Final_v3_1_0.apk | head -20
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose TV_DIGITAL_Final_v3_1_0.apk
+          sha256sum TV_DIGITAL_Final_v3_1_0.apk
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: TV_DIGITAL_Final_v3_1_0
+          path: TV_DIGITAL_Final_v3_1_0.apk
+          if-no-files-found: error
