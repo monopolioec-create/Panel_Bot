@@ -1,0 +1,50 @@
+;d.dismiss();}).show();}
+    private void liveFormatDialog(){String[] a={"TS","HLS / M3U8"};int c="m3u8".equals(prefs.liveFormat())?1:0;new AlertDialog.Builder(this).setTitle(t("Formato de transmisión en vivo","Live Stream Format")).setSingleChoiceItems(a,c,(d,w)->{String f=w==1?"m3u8":"ts";prefs.liveFormat(f);releasePlayer(false);Toast.makeText(this,t("Formato guardado: ","Format saved: ")+("m3u8".equals(f)?"HLS / M3U8":"TS"),Toast.LENGTH_SHORT).show();d.dismiss();}).show();}
+    private void playerDialog(){String[] a={t("Interno (recomendado)","Internal (recommended)"),t("Externo","External"),t("Automático con respaldo externo","Automatic with external fallback")};String m=prefs.playerMode();int c="external".equals(m)?1:"auto".equals(m)?2:0;new AlertDialog.Builder(this).setTitle(t("Reproductor","Player")).setSingleChoiceItems(a,c,(d,w)->{prefs.playerMode(w==1?"external":w==2?"auto":"internal");d.dismiss();}).show();}
+
+    private void externalPlayerDialog(){
+        Intent intent=new Intent(Intent.ACTION_VIEW);intent.setDataAndType(Uri.parse("https://example.com/video.mp4"),"video/*");
+        List<ResolveInfo> rs=getPackageManager().queryIntentActivities(intent,PackageManager.MATCH_DEFAULT_ONLY);
+        String[] names=new String[rs.size()+2];String[] pkgs=new String[rs.size()+2];
+        names[0]=t("Predeterminado de TV DIGITAL (interno)","TV DIGITAL default (internal)");pkgs[0]="__internal";
+        names[1]=t("Selector de Android","Android chooser");pkgs[1]="";
+        int checked="internal".equals(prefs.playerMode())?0:1;String cur=prefs.externalPackage();
+        for(int i=0;i<rs.size();i++){ResolveInfo r=rs.get(i);names[i+2]=String.valueOf(r.loadLabel(getPackageManager()));pkgs[i+2]=r.activityInfo.packageName;if(!"internal".equals(prefs.playerMode())&&cur.equals(pkgs[i+2]))checked=i+2;}
+        final int[] sel={checked};
+        new AlertDialog.Builder(this).setTitle(t("Player externo","External player")).setSingleChoiceItems(names,checked,(d,w)->sel[0]=w).setPositiveButton(t("Guardar","Save"),(d,w)->{
+            if(sel[0]==0){prefs.externalPackage("");prefs.playerMode("internal");Toast.makeText(this,t("Reproductor de TV DIGITAL restaurado","TV DIGITAL player restored"),Toast.LENGTH_SHORT).show();}
+            else {prefs.externalPackage(pkgs[sel[0]]);prefs.playerMode("external");Toast.makeText(this,t("Reproductor externo establecido como predeterminado","External player set as default"),Toast.LENGTH_SHORT).show();}
+        }).setNegativeButton(t("Cancelar","Cancel"),null).show();
+    }
+
+    private void automaticDialog(){String[] a={t("Vista previa automática de canales: ON","Automatic channel preview: ON"),t("Vista previa automática de canales: OFF","Automatic channel preview: OFF")};int c=prefs.autoPreview()?0:1;new AlertDialog.Builder(this).setTitle(t("Automático","Automatic")).setSingleChoiceItems(a,c,(d,w)->{prefs.autoPreview(w==0);d.dismiss();}).show();}
+    private void timeFormatDialog(){String[] a={"24H","12H"};int c="12".equals(prefs.timeFormat())?1:0;new AlertDialog.Builder(this).setTitle(t("Formato del tiempo","Time format")).setSingleChoiceItems(a,c,(d,w)->{prefs.timeFormat(w==1?"12":"24");d.dismiss();}).show();}
+
+    private void subtitleDialog(){
+        String[] a={t("Subtítulos desactivados","Subtitles off"),t("Pequeños","Small"),t("Normales","Normal"),t("Grandes","Large")};int c=!prefs.subtitles()?0:"small".equals(prefs.subtitleSize())?1:"large".equals(prefs.subtitleSize())?3:2;new AlertDialog.Builder(this).setTitle(t("Subtítulos","Subtitles")).setSingleChoiceItems(a,c,(d,w)->{if(w==0){prefs.subtitles(false);}else{prefs.subtitles(true);prefs.subtitleSize(w==1?"small":w==3?"large":"normal");}d.dismiss();}).show();
+    }
+    private void deviceTypeDialog(){String[] a={t("Automático","Automatic"),"Android TV / TV Box",t("Tablet","Tablet"),t("Teléfono","Phone")};String d=prefs.deviceType();int c="tv".equals(d)?1:"tablet".equals(d)?2:"phone".equals(d)?3:0;new AlertDialog.Builder(this).setTitle(t("Tipo de dispositivo","Device type")).setSingleChoiceItems(a,c,(dlg,w)->{prefs.deviceType(w==1?"tv":w==2?"tablet":w==3?"phone":"auto");dlg.dismiss();}).show();}
+
+    private void refreshNow(){ImageLoader.clear();showActivation(t("Actualizando desde el panel…","Refreshing from panel…"));io.execute(this::checkPanel);}
+
+    private void showLoading(String s){screen="loading";releasePlayer(false);root.removeAllViews();root.setBackgroundColor(BG);LinearLayout b=new LinearLayout(this);b.setOrientation(LinearLayout.VERTICAL);b.setGravity(Gravity.CENTER);ProgressBar p=new ProgressBar(this);b.addView(p,new LinearLayout.LayoutParams(dp(54),dp(54)));TextView t=tv(s,19,TEXT,false);t.setGravity(Gravity.CENTER);LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(-1,dp(72));lp.topMargin=dp(10);b.addView(t,lp);root.addView(b,new FrameLayout.LayoutParams(-1,-1));}
+    private void showError(String title,Exception e,Runnable back){root.removeAllViews();LinearLayout b=new LinearLayout(this);b.setOrientation(LinearLayout.VERTICAL);b.setGravity(Gravity.CENTER);TextView a=tv(title,25,TEXT,true);a.setGravity(Gravity.CENTER);b.addView(a,new LinearLayout.LayoutParams(-1,dp(70)));TextView m=tv(msg(e),16,MUTED,false);m.setGravity(Gravity.CENTER);b.addView(m,new LinearLayout.LayoutParams(-1,dp(90)));TextView v=actionButton(t("VOLVER","BACK"),back);b.addView(v,new LinearLayout.LayoutParams(dp(220),dp(54)));root.addView(b,new FrameLayout.LayoutParams(-1,-1));v.requestFocus();}
+
+    private TextView focusButton(String s,int size,Runnable r){TextView v=tv(s,size,TEXT,true);v.setGravity(Gravity.CENTER);v.setBackground(round(Color.argb(185,7,31,35),ACCENT,1,10));wireAction(v,r);v.setOnFocusChangeListener((x,h)->x.setBackground(round(h?Color.rgb(17,69,75):Color.argb(185,7,31,35),h?SELECTED:ACCENT,h?2:1,10)));return v;}
+    static void wireAction(View v, Runnable action){
+        v.setFocusable(true);
+        v.setClickable(true);
+        v.setOnClickListener(x -> action.run());
+        v.setOnKeyListener((x,k,e)->{
+            if(e.getAction()==KeyEvent.ACTION_UP && (k==KeyEvent.KEYCODE_DPAD_CENTER || k==KeyEvent.KEYCODE_ENTER || k==KeyEvent.KEYCODE_NUMPAD_ENTER || k==KeyEvent.KEYCODE_BUTTON_A)){
+                action.run();
+                return true;
+            }
+            return false;
+        });
+    }
+
+    private ImageView brandLogo(){
+        ImageView v=new ImageView(this);
+        v.setScaleType(ImageView.ScaleType.CENTER_INSIDE);
+        v.setAdjustViewBounds(tr
