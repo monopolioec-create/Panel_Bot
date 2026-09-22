@@ -141,6 +141,6 @@ p.write_text(s)
 p=Path('ibo_independent/android/app/build.gradle')
 s=p.read_text()
 if "androidx.fragment:fragment:" not in s:
-    s=s.replace("dependencies {", "dependencies {\n    implementation 'androidx.fragment:fragment:1.8.5'")
+    s=s.replace("dependencies {", "dependencies {\n    implementation 'androidx.fragment:fragment:1.8.5'\n    implementation 'androidx.mediarouter:mediarouter:1.7.0'")
 s=s.replace("versionCode 10","versionCode 11").replace("versionName '5.0.4'","versionName '5.1.0'")
 p.write_text(s)
