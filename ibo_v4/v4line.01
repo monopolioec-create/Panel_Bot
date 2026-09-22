@@ -1,0 +1,43 @@
++    private void runWithParentalForCategory(String categoryId,Runnable action){if(categoryId==null||categoryId.startsWith("__")||!prefs.parentalEnabled()||parentalSessionUnlocked.contains(categoryId)||!isAdultName(categoryName(categoryId))){action.run();return;}verifyParental(()->{parentalSessionUnlocked.add(categoryId);action.run();});}
++    private void verifyParental(Runnable ok){EditText pin=new EditText(this);pin.setInputType(InputType.TYPE_CLASS_NUMBER|InputType.TYPE_NUMBER_VARIATION_PASSWORD);pin.setHint(t("PIN parental","Parental PIN"));pin.setPadding(dp(24),0,dp(24),0);AlertDialog d=new AlertDialog.Builder(this).setTitle(t("Contenido protegido","Protected content")).setMessage(t("Introduce el PIN para acceder a contenido adulto.","Enter the PIN to access adult content.")).setView(pin).setPositiveButton(t("Desbloquear","Unlock"),null).setNegativeButton(t("Cancelar","Cancel"),null).create();d.setOnShowListener(x->d.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v->{if(!prefs.parentalPin().equals(pin.getText().toString().trim())){Toast.makeText(this,t("PIN incorrecto","Incorrect PIN"),Toast.LENGTH_SHORT).show();return;}d.dismiss();ok.run();}));d.show();}
++
++    private void startHeroCarousel(ImageView hero,TextView title,TextView meta,int ticket){
++        if(config!=null&&"static".equalsIgnoreCase(config.heroMode)&&config.heroStaticUrl!=null&&!config.heroStaticUrl.isEmpty()){ImageLoader.load(hero,config.heroStaticUrl,Color.rgb(16,28,32));return;}
++        io.execute(()->{try{List<XtreamApi.Category> cats=XtreamApi.categories(config,"movie");List<XtreamApi.Item> items=XtreamApi.items(config,"movie");String match=(config!=null&&config.heroCategoryMatch!=null&&!config.heroCategoryMatch.isEmpty())?config.heroCategoryMatch:"estreno";String cid=findPremiereCategory(cats,match);if(cid.isEmpty())return;List<XtreamApi.Item> picks=new ArrayList<>();for(XtreamApi.Item it:items)if(cid.equals(it.categoryId)&&((it.backdrop!=null&&!it.backdrop.isEmpty())||(it.icon!=null&&!it.icon.isEmpty())))picks.add(it);if(picks.isEmpty())return;ui.post(()->rotateHero(hero,title,meta,picks,0,ticket));}catch(Exception ignored){}});
++    }
++    private String findPremiereCategory(List<XtreamApi.Category> cats,String match){String m=match.toLowerCase(Locale.ROOT);String best="";int bestYear=-1;for(XtreamApi.Category c:cats){String n=c.name.toLowerCase(Locale.ROOT);if(!n.contains(m)&&!n.contains("estreno"))continue;int year=0;for(int i=0;i+3<c.name.length();i++){String q=c.name.substring(i,i+4);try{int y=Integer.parseInt(q);if(y>year)year=y;}catch(Exception ignored){}}if(best.isEmpty()||year>=bestYear){best=c.id;bestYear=year;}}return best;}
++    private void rotateHero(ImageView hero,TextView title,TextView meta,List<XtreamApi.Item> items,int index,int ticket){if(!"home".equals(screen)||ticket!=heroGeneration||items.isEmpty())return;XtreamApi.Item it=items.get(index%items.size());String img=(it.backdrop!=null&&!it.backdrop.isEmpty())?it.backdrop:it.icon;ImageLoader.load(hero,img,Color.rgb(16,28,32));title.setText(it.name);String m=(it.year==null?"":it.year)+(it.rating!=null&&!it.rating.isEmpty()?"   ★ "+it.rating:"");meta.setText(m.isEmpty()?t("Estrenos","Premieres"):m);ui.postDelayed(()->rotateHero(hero,title,meta,items,(index+1)%items.size(),ticket),2500);}
++
+     private void toggleCurrentFavorite(){if(currentPlaying==null)return;toggleFavorite(currentPlaying);if(liveMeta!=null)liveMeta.setText(prefs.isFavorite("live",currentPlaying.id)?"★ "+t("Favorito","Favorite"):t("En reproducción","Playing"));}
+     private void toggleFavorite(XtreamApi.Item item){String k="episode".equals(item.kind)?"series":item.kind;prefs.toggleFavorite(k,item.id);Toast.makeText(this,prefs.isFavorite(k,item.id)?t("Añadido a favoritos","Added to favorites"):t("Eliminado de favoritos","Removed from favorites"),Toast.LENGTH_SHORT).show();refreshSectionItems();}
+ 
+@@ -697,13 +751,33 @@
+     }
+ 
+     private void parentalDialog(){
+-        LinearLayout box=new LinearLayout(this);box.setOrientation(LinearLayout.VERTICAL);box.setPadding(dp(24),dp(8),dp(24),0);EditText pin=new EditText(this);pin.setInputType(InputType.TYPE_CLASS_NUMBER|InputType.TYPE_NUMBER_VARIATION_PASSWORD);pin.setHint("PIN");pin.setText(prefs.parentalPin());box.addView(pin);
+-        String[] opts={t("Activado","Enabled"),t("Desactivado","Disabled")};int checked=prefs.parentalEnabled()?0:1;
+-        new AlertDialog.Builder(this).setTitle(t("Control parental","Parental control")).setSingleChoiceItems(opts,checked,(d,w)->{}).setView(box).setPositiveButton(t("Guardar","Save"),(d,w)->{
+-            AlertDialog ad=(AlertDialog)d;int pos=ad.getListView().getCheckedItemPosition();String v=pin.getText().toString().trim();if(v.length()>=4)prefs.parentalPin(v);prefs.parentalEnabled(pos==0);Toast.makeText(this,t("Control parental actualizado","Parental control updated"),Toast.LENGTH_SHORT).show();
++        if (!prefs.parentalEnabled()) {
++            showSetParentalPinDialog(false);
++            return;
++        }
++        String[] a={t("Cambiar PIN","Change PIN"),t("Desactivar control parental","Disable parental control")};
++        new AlertDialog.Builder(this).setTitle(t("Control parental activado","Parental control enabled")).setItems(a,(d,w)->{
++            if(w==0)verifyCurrentPin(() -> showSetParentalPinDialog(true));
++            else verifyCurrentPin(() -> {prefs.parentalEnabled(false);parentalSessionUnlocked.clear();Toast.makeText(this,t("Control parental desactivado","Parental control disabled"),Toast.LENGTH_SHORT).show();});
+         }).setNegativeButton(t("Cancelar","Cancel"),null).show();
+     }
+ 
++    private void showSetParentalPinDialog(boolean changing){
++        LinearLayout box=new LinearLayout(this);box.setOrientation(LinearLayout.VERTICAL);box.setPadding(dp(24),dp(8),dp(24),0);
++        EditText pin=new EditText(this);pin.setInputType(InputType.TYPE_CLASS_NUMBER|InputType.TYPE_NUMBER_VARIATION_PASSWORD);pin.setHint(t("Nuevo PIN (mínimo 4 dígitos)","New PIN (minimum 4 digits)"));box.addView(pin);
++        EditText confirm=new EditText(this);confirm.setInputType(InputType.TYPE_CLASS_NUMBER|InputType.TYPE_NUMBER_VARIATION_PASSWORD);confirm.setHint(t("Confirmar PIN","Confirm PIN"));box.addView(confirm);
++        AlertDialog dialog=new AlertDialog.Builder(this).setTitle(changing?t("Cambiar PIN parental","Change parental PIN"):t("Activar control parental","Enable parental control")).setView(box).setPositiveButton(t("Guardar","Save"),null).setNegativeButton(t("Cancelar","Cancel"),null).create();
++        dialog.setOnShowListener(x->dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v->{String a=pin.getText().toString().trim(),b=confirm.getText().toString().trim();if(a.length()<4||!a.equals(b)){Toast.makeText(this,t("Los PIN deben coincidir y tener al menos 4 dígitos","PINs must match and have at least 4 digits"),Toast.LENGTH_LONG).show();return;}prefs.parentalPin(a);prefs.parentalEnabled(true);parentalSessionUnlocked.clear();Toast.makeText(this,t("Control parental activado","Parental control enabled"),Toast.LENGTH_SHORT).show();dialog.dismiss();}));
++        dialog.show();
++    }
++
++    private void verifyCurrentPin(Runnable ok){
++        EditText pin=new EditText(this);pin.setInputType(InputType.TYPE_CLASS_NUMBER|InputType.TYPE_NUMBER_VARIATION_PASSWORD);pin.setHint(t("PIN actual","Current PIN"));pin.setPadding(dp(24),0,dp(24),0);
