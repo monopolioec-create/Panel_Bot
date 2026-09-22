@@ -1,0 +1,84 @@
+sectionKind)){
+            String n="server".equals(prefs.liveOrder())?"name":"server";prefs.liveOrder(n);Toast.makeText(this,"name".equals(n)?t("Orden: nombre","Order: name"):t("Orden: servidor","Order: server"),Toast.LENGTH_SHORT).show();
+        }else{
+            String cur=prefs.mediaSort();String n="server".equals(cur)?"name":"name".equals(cur)?"rating":"server";prefs.mediaSort(n);Toast.makeText(this,t("Orden actualizado","Sort updated"),Toast.LENGTH_SHORT).show();
+        }
+        refreshSectionItems();
+    }
+
+    private void playLive(XtreamApi.Item item) {
+        if (needsParental(item)) { verifyParental(() -> playLiveUnlocked(item)); return; }
+        playLiveUnlocked(item);
+    }
+
+    private void playLiveUnlocked(XtreamApi.Item item) {
+        currentPlaying=item;currentPlayingKind="live";prefs.addRecent("live",item.id);
+        String url=XtreamApi.playback(config,item,prefs.liveFormat());
+        if(liveList!=null)liveList.invalidateViews();
+        if(castMedia(url,item,true)){liveTitle.setText(item.name);liveMeta.setText(t("Reproduciendo en Chromecast","Casting to Chromecast"));return;}
+        if("external".equals(prefs.playerMode())){launchExternal(url);return;}
+        releasePlayer(false);
+        livePreview.removeAllViews();
+        playerView=new PlayerView(this);playerView.setUseController(true);livePreview.addView(playerView,new FrameLayout.LayoutParams(-1,-1));
+        player=new ExoPlayer.Builder(this).build();playerView.setPlayer(player);applySubtitlePrefs();player.setMediaItem(MediaItem.fromUri(url));player.prepare();player.play();
+        liveTitle.setText(item.name);liveMeta.setText(prefs.isFavorite("live",item.id)?"★ "+t("Favorito","Favorite"):t("En reproducción","Playing"));
+        final int healthTicket=++liveHealthGeneration;
+        player.addListener(new Player.Listener(){
+            @Override public void onPlayerError(androidx.media3.common.PlaybackException e){
+                if("auto".equals(prefs.playerMode()))launchExternal(url);
+                else showChannelOffline(item);
+            }
+            @Override public void onPlaybackStateChanged(int state){if(state==Player.STATE_READY&&liveMeta!=null)liveMeta.setText(prefs.isFavorite("live",item.id)?"★ "+t("Favorito","Favorite"):t("En reproducción","Playing"));}
+        });
+        scheduleLiveHealthCheck(item, healthTicket);
+    }
+
+    private void openSeries(XtreamApi.Item series) {
+        if (needsParental(series)) { verifyParental(() -> openSeriesUnlocked(series)); return; }
+        openSeriesUnlocked(series);
+    }
+
+    private void openSeriesUnlocked(XtreamApi.Item series) {
+        showLoading(t("Cargando episodios…","Loading episodes…"));
+        io.execute(()->{
+            try{
+                List<XtreamApi.Item> eps=XtreamApi.episodes(config,series.id);
+                ui.post(()->showEpisodes(series,eps));
+            }catch(Exception e){ui.post(()->showError(t("No se pudieron cargar los episodios","Could not load episodes"),e,()->loadSection("series","")));}
+        });
+    }
+
+    private void showEpisodes(XtreamApi.Item series,List<XtreamApi.Item> eps){
+        screen="episodes";releasePlayer(false);root.removeAllViews();
+        LinearLayout all=new LinearLayout(this);all.setOrientation(LinearLayout.VERTICAL);all.setPadding(dp(16),dp(12),dp(16),dp(12));
+        LinearLayout h=new LinearLayout(this);h.setGravity(Gravity.CENTER_VERTICAL);
+        TextView back=actionButton("‹ "+t("Series","Series"),()->loadSection("series",""));h.addView(back,new LinearLayout.LayoutParams(dp(160),dp(46)));
+        TextView title=tv(series.name+"   •   "+eps.size()+" "+t("episodios","episodes"),20,TEXT,true);title.setPadding(dp(18),0,0,0);h.addView(title,new LinearLayout.LayoutParams(0,dp(46),1));all.addView(h,new LinearLayout.LayoutParams(-1,dp(56)));
+        GridView grid=new GridView(this);grid.setNumColumns(gridColumns());grid.setHorizontalSpacing(dp(12));grid.setVerticalSpacing(dp(12));grid.setAdapter(new MediaAdapter(eps));
+        grid.setOnItemClickListener((p,v,pos,id)->playFull(eps.get(pos)));grid.setOnItemLongClickListener((p,v,pos,id)->{toggleFavorite(eps.get(pos));return true;});
+        all.addView(grid,new LinearLayout.LayoutParams(-1,0,1));root.addView(all,new FrameLayout.LayoutParams(-1,-1));if(!eps.isEmpty())grid.requestFocus();
+    }
+
+    private void playFull(XtreamApi.Item item) {
+        if (needsParental(item)) { verifyParental(() -> playFullUnlocked(item)); return; }
+        playFullUnlocked(item);
+    }
+
+    private void playFullUnlocked(XtreamApi.Item item) {
+        String kind="live".equals(item.kind)?"live":"movie".equals(item.kind)?"movie":"series";
+        currentPlaying=item;currentPlayingKind=kind;prefs.addRecent(kind,item.id);
+        String url=XtreamApi.playback(config,item,prefs.liveFormat());
+        if(castMedia(url,item,"live".equals(item.kind)))return;
+        if("external".equals(prefs.playerMode())){launchExternal(url);return;}
+        releasePlayer(false);screen="player";root.removeAllViews();
+        FrameLayout box=new FrameLayout(this);box.setBackgroundColor(Color.BLACK);playerView=new PlayerView(this);playerView.setUseController(true);box.addView(playerView,new FrameLayout.LayoutParams(-1,-1));
+        LinearLayout top=new LinearLayout(this);top.setGravity(Gravity.CENTER_VERTICAL);top.setPadding(dp(14),dp(10),dp(14),0);top.setBackgroundColor(Color.argb(120,0,0,0));
+        TextView back=actionButton("‹ "+t("Volver","Back"),this::returnFromPlayer);top.addView(back,new LinearLayout.LayoutParams(dp(145),dp(46)));
+        TextView nm=tv(item.name,18,TEXT,true);nm.setPadding(dp(14),0,0,0);top.addView(nm,new LinearLayout.LayoutParams(0,dp(46),1));
+        FrameLayout.LayoutParams tp=new FrameLayout.LayoutParams(-1,dp(66),Gravity.TOP);box.addView(top,tp);root.addView(box,new FrameLayout.LayoutParams(-1,-1));
+        player=new ExoPlayer.Builder(this).build();playerView.setPlayer(player);applySubtitlePrefs();resumeSeek=prefs.resume(kind,item.id);player.setMediaItem(MediaItem.fromUri(url));player.prepare();if(resumeSeek>0)player.seekTo(resumeSeek);player.play();
+        player.addListener(new Player.Listener(){@Override public void onPlayerError(androidx.media3.common.PlaybackException e){Toast.makeText(MainActivity.this,t("Error de reproducción","Playback error"),Toast.LENGTH_SHORT).show();if("auto".equals(prefs.playerMode()))launchExternal(url);}});
+        playerView.requestFocus();
+    }
+
+    private void returnFromPlayer(){s
