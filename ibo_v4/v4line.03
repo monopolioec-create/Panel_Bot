@@ -1,0 +1,52 @@
++            wireAction(row,()->runWithParentalForCategory(x.id,()->{selectedCategory=x.id;refreshSectionItems();if(categoryList!=null){categoryList.setSelection(p);categoryList.invalidateViews();}}));
++            row.setOnFocusChangeListener((z,h)->{if(!x.id.equals(selectedCategory))z.setBackground(round(h?Color.rgb(13,42,47):(p%2==0?PANEL:PANEL2),h?ACCENT:Color.TRANSPARENT,h?1:0,4));});
+             row.setOnLongClickListener(z->{if(x.id.startsWith("__"))return false;Set<String> hidden=prefs.hiddenCategories(sectionKind);hidden.add(x.id);prefs.hiddenCategories(sectionKind,hidden);Toast.makeText(MainActivity.this,t("Categoría oculta","Category hidden"),Toast.LENGTH_SHORT).show();loadSection(sectionKind,"");return true;});
+             return row;
+         }
+--- a/PanelApi.java
++++ b/PanelApi.java
+@@ -16,6 +16,16 @@
+         public String server = "";
+         public String username = "";
+         public String password = "";
++        public String heroMode = "premiere";
++        public String heroStaticUrl = "";
++        public String heroCategoryMatch = "estreno";
++        public String brandLogoUrl = "";
++        public String homeOrder = "live,movie,series,sports,playlist";
++        public String iconLive = "▣";
++        public String iconMovie = "▶";
++        public String iconSeries = "▤";
++        public String iconSports = "◉";
++        public String iconPlaylist = "⇄";
+     }
+ 
+     private static String apiUrl(String action) {
+@@ -48,6 +58,16 @@
+             c.server = x.optString("server", "");
+             c.username = x.optString("username", "");
+             c.password = x.optString("password", "");
++            c.heroMode = x.optString("hero_mode", "premiere");
++            c.heroStaticUrl = x.optString("hero_static_url", "");
++            c.heroCategoryMatch = x.optString("hero_category_match", "estreno");
++            c.brandLogoUrl = x.optString("brand_logo_url", "");
++            c.homeOrder = x.optString("home_order", "live,movie,series,sports,playlist");
++            c.iconLive = x.optString("icon_live", "▣");
++            c.iconMovie = x.optString("icon_movie", "▶");
++            c.iconSeries = x.optString("icon_series", "▤");
++            c.iconSports = x.optString("icon_sports", "◉");
++            c.iconPlaylist = x.optString("icon_playlist", "⇄");
+         }
+         return c;
+     }
+--- a/AndroidManifest.xml
++++ b/AndroidManifest.xml
+@@ -12,7 +12,7 @@
+         android:allowBackup="false"
+         android:usesCleartextTraffic="true"
+         android:label="MediaPlayerIbo"
+-        android:icon="@drawable/ic_launcher"
++        android:icon="@drawable/tv_digital_icon"
+         android:theme="@style/AppTheme"
+         android:networkSecurityConfig="@xml/network_security_config">
+         <activity
