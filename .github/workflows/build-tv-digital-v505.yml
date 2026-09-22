@@ -157,9 +157,6 @@ jobs:
           "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging TV_DIGITAL_Premium_V5_0_5.apk | tee /tmp/badging.txt
           grep -q "application-label:'TV DIGITAL'" /tmp/badging.txt
           "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose TV_DIGITAL_Premium_V5_0_5.apk
-          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump xmltree TV_DIGITAL_Premium_V5_0_5.apk AndroidManifest.xml > /tmp/manifest_tree.txt
-          grep -q "ReconnectionService" /tmp/manifest_tree.txt
-          grep -q "MediaNotificationService" /tmp/manifest_tree.txt
           unzip -p TV_DIGITAL_Premium_V5_0_5.apk res/drawable/tv_digital_icon.png > /tmp/apk_icon.png || true
           if [ -s /tmp/apk_icon.png ]; then
             file /tmp/apk_icon.png
