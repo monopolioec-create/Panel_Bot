@@ -1,0 +1,100 @@
+name: Build TV DIGITAL V5 Final
+
+on:
+  push:
+    branches:
+      - tv-digital-v5-final-20260922
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Reconstruct V4 base
+        run: |
+          mkdir -p /tmp/ibo_patch
+          cat ibo_ui_v2/main2.b64.01 ibo_ui_v2/main2.b64.02 ibo_ui_v2/main2.b64.03 ibo_ui_v2/main2.b64.04 ibo_ui_v2/main2.b64.05 ibo_ui_v2/main2.b64.06a ibo_ui_v2/main2.b64.07 > /tmp/main.b64
+          base64 -d /tmp/main.b64 > /tmp/MainActivity.java.gz
+          gzip -dc /tmp/MainActivity.java.gz > ibo_independent/android/app/src/main/java/com/monopolio/mediaplayeribo/MainActivity.java
+          cat ibo_ui_v2/other2.b64.01 ibo_ui_v2/other2.b64.02 ibo_ui_v2/other2.b64.03 > /tmp/other.b64
+          base64 -d /tmp/other.b64 > /tmp/other.tgz
+          tar -xzf /tmp/other.tgz -C /tmp/ibo_patch
+          cp /tmp/ibo_patch/AppPrefs.java ibo_independent/android/app/src/main/java/com/monopolio/mediaplayeribo/AppPrefs.java
+          cp /tmp/ibo_patch/ImageLoader.java ibo_independent/android/app/src/main/java/com/monopolio/mediaplayeribo/ImageLoader.java
+          cp /tmp/ibo_patch/XtreamApi.java ibo_independent/android/app/src/main/java/com/monopolio/mediaplayeribo/XtreamApi.java
+          cp /tmp/ibo_patch/build.gradle ibo_independent/android/app/build.gradle
+          cp /tmp/ibo_patch/AndroidManifest.xml ibo_independent/android/app/src/main/AndroidManifest.xml
+          cat ibo_ui_v3/v3diff.0 ibo_ui_v3/v3diff.1 ibo_ui_v3/v3diff.2 ibo_ui_v3/v3diff.3 > /tmp/v3.patch
+          (cd ibo_independent/android/app/src/main/java/com/monopolio/mediaplayeribo && patch -p1 < /tmp/v3.patch)
+          cat ibo_v4/v4line.00 ibo_v4/v4line.01 ibo_v4/v4line.02 ibo_v4/v4line.03 > /tmp/v4.patch
+          (cd ibo_independent/android/app/src/main/java/com/monopolio/mediaplayeribo && patch --batch -p1 < /tmp/v4.patch || true)
+          cp ibo_v4/tv_digital_icon.png ibo_independent/android/app/src/main/res/drawable/tv_digital_icon.png
+
+      - name: Apply V5 final code
+        run: |
+          unzip -o ibo_v5/TV_DIGITAL_V5_CODE.zip -d ibo_independent/android
+          # Ensure icon exists for normal, round and Android-TV launcher use.
+          test -f ibo_independent/android/app/src/main/res/drawable/tv_digital_icon.png
+          sed -i 's/android:label="MediaPlayerIbo"/android:label="TV DIGITAL"/' ibo_independent/android/app/src/main/AndroidManifest.xml
+
+      - name: Functional audit
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          m=Path('ibo_independent/android/app/src/main/java/com/monopolio/mediaplayeribo/MainActivity.java').read_text()
+          manifest=Path('ibo_independent/android/app/src/main/AndroidManifest.xml').read_text()
+          gradle=Path('ibo_independent/android/app/build.gradle').read_text()
+          provider=Path('ibo_independent/android/app/src/main/java/com/monopolio/mediaplayeribo/CastOptionsProvider.java').read_text()
+          checks={
+            'persistent selected live-channel highlight':'liveRowBackground' in m and 'liveList.invalidateViews()' in m,
+            'native player restore option':'Predeterminado de TV DIGITAL (interno)' in m and 'prefs.playerMode("internal")' in m,
+            'Cast route button':'createCastButton' in m and 'CastButtonFactory.setUpMediaRouteButton' in m,
+            'Cast media load':'MediaLoadRequestData' in m and 'castMedia(' in m,
+            'Cast provider metadata':'OPTIONS_PROVIDER_CLASS_NAME' in manifest and 'CastOptionsProvider' in provider,
+            'offline channel screen':'CANAL TEMPORALMENTE FUERA DE SERVICIO' in m and 'showChannelOffline' in m,
+            'stall health check':'scheduleLiveHealthCheck' in m and '15000' in m,
+            'startup preload':'preloadCatalogAndShowHome' in m and 'CountDownLatch' in m,
+            'no normal section spinner':'showLoading(t("Cargando contenido' not in m[m.find('private void loadSection'):m.find('private void showSectionUI')],
+            'catalog cache':'catalogCategories' in m and 'catalogItems' in m,
+            'launcher icon':'android:icon="@drawable/tv_digital_icon"' in manifest and 'android:roundIcon="@drawable/tv_digital_icon"' in manifest,
+            'cast dependency':'play-services-cast-framework' in gradle,
+          }
+          for k,v in checks.items(): print(('PASS ' if v else 'FAIL ')+k)
+          if not all(checks.values()): raise SystemExit(1)
+          PY
+
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v4.0.4
+      - run: sdkmanager "platform-tools" "platforms;android-35" "build-tools;35.0.0"
+      - uses: gradle/actions/setup-gradle@v6
+        with:
+          gradle-version: '8.9'
+
+      - name: Compile
+        working-directory: ibo_independent/android
+        run: gradle :app:compileDebugJavaWithJavac --no-daemon --stacktrace
+
+      - name: Build APK
+        working-directory: ibo_independent/android
+        run: gradle :app:assembleDebug --no-daemon --stacktrace
+
+      - name: Verify APK
+        run: |
+          cp ibo_independent/android/app/build/outputs/apk/debug/app-debug.apk TV_DIGITAL_Premium_V5.apk
+          unzip -t TV_DIGITAL_Premium_V5.apk
+          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging TV_DIGITAL_Premium_V5.apk | head -20
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose TV_DIGITAL_Premium_V5.apk
+          sha256sum TV_DIGITAL_Premium_V5.apk
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: TV_DIGITAL_Premium_V5_APK
+          path: TV_DIGITAL_Premium_V5.apk
+          if-no-files-found: error
