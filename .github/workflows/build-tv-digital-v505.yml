@@ -60,6 +60,7 @@ jobs:
 
           cp /tmp/tv_digital_icon.png "$RES/drawable/tv_digital_icon.png"
           cp /tmp/tv_digital_icon.png "$RES/drawable/tv_digital_banner.png"
+          cp ibo_v5_src/ic_cast_tv.xml "$RES/drawable/ic_cast_tv.xml"
 
           for D in mdpi hdpi xhdpi xxhdpi xxxhdpi; do
             cp /tmp/tv_digital_icon.png "$RES/mipmap-$D/ic_launcher.png"
@@ -109,14 +110,15 @@ jobs:
             'no false Google Play Services block':'GoogleApiAvailability.getInstance' not in m,
             'official Cast route selector':'MediaRouteSelector' in m and 'categoryForCast' in m,
             'Cast framework initialized':'CastContext.getSharedInstance(this)' in m,
-            'Cast route button uses activity':'CastButtonFactory.setUpMediaRouteButton(this,b)' in m,
+            'custom Chromecast button':'R.drawable.ic_cast_tv' in m and 'showCastChooser()' in m,
+            'direct Cast discovery':'MediaRouter.getInstance(this)' in m and 'CALLBACK_FLAG_REQUEST_DISCOVERY' in m and 'router.selectRoute(route)' in m,
             'Cast media load still active':'castMedia(' in m and 'MediaLoadRequestData' in m,
             'startup local logo':'R.drawable.tv_digital_icon' in m,
             'horizontal progress bar':'progressBarStyleHorizontal' in m,
             'launcher icon manifest':'android:icon="@mipmap/ic_launcher"' in manifest,
             'round icon manifest':'android:roundIcon="@mipmap/ic_launcher_round"' in manifest,
             'version 5.0.5':"versionName '5.0.5'" in gradle and 'versionCode 11' in gradle,
-            'Cast constructor protected':'catch(Throwable constructorError)' in m,
+            'dynamic visible version':'TextView ver = tv("v"+BuildConfig.VERSION_NAME' in m,
             'Cast background reconnect':'setEnableReconnectionService(true)' in Path('ibo_independent/android/app/src/main/java/com/monopolio/mediaplayeribo/CastOptionsProvider.java').read_text(),
             'Cast saved session resume':'setResumeSavedSession(true)' in Path('ibo_independent/android/app/src/main/java/com/monopolio/mediaplayeribo/CastOptionsProvider.java').read_text(),
             'Cast media notification':'NotificationOptions' in Path('ibo_independent/android/app/src/main/java/com/monopolio/mediaplayeribo/CastOptionsProvider.java').read_text(),
