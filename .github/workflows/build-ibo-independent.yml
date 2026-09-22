@@ -1,0 +1,56 @@
+name: Build Independent MediaPlayerIbo
+
+on:
+  push:
+    branches:
+      - ibo-independent-build-20260921
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Unpack Android source
+        run: |
+          mkdir -p buildsrc
+          unzip -q ibo_independent/MediaPlayerIbo_Android_Source.zip -d buildsrc
+          find buildsrc/android -maxdepth 3 -type f | head -30
+
+      - name: Set up Java
+        uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v4.0.4
+
+      - name: Install Android 35
+        run: sdkmanager "platform-tools" "platforms;android-35" "build-tools;35.0.0"
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v6
+        with:
+          gradle-version: '8.9'
+
+      - name: Build APK
+        working-directory: buildsrc/android
+        run: gradle :app:assembleDebug --no-daemon --stacktrace
+
+      - name: Prepare APK
+        run: |
+          cp buildsrc/android/app/build/outputs/apk/debug/app-debug.apk MediaPlayerIbo_Independiente.apk
+          file MediaPlayerIbo_Independiente.apk
+          sha256sum MediaPlayerIbo_Independiente.apk
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v7
+        with:
+          name: MediaPlayerIbo_Independiente_APK
+          path: MediaPlayerIbo_Independiente.apk
+          if-no-files-found: error
