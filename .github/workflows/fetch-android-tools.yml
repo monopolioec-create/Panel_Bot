@@ -1,0 +1,25 @@
+name: Fetch Android APK Tools
+
+on:
+  push:
+    branches:
+      - mr-player-build-20260921
+  workflow_dispatch:
+
+jobs:
+  tools:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download tools
+        run: |
+          curl -L --fail --retry 3 -o apksig.jar https://dl.google.com/dl/android/maven2/com/android/tools/build/apksig/8.7.3/apksig-8.7.3.jar
+          curl -L --fail --retry 3 -o apktool.jar https://github.com/iBotPeaches/Apktool/releases/download/v3.0.3/apktool_3.0.3.jar
+          sha256sum apksig.jar apktool.jar
+      - name: Upload tools
+        uses: actions/upload-artifact@v7
+        with:
+          name: android-apk-tools
+          path: |
+            apksig.jar
+            apktool.jar
+          if-no-files-found: error
