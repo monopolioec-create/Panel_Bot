@@ -1,0 +1,27 @@
+plugins { id 'com.android.application' }
+
+def panelApiUrl = providers.gradleProperty('PANEL_API_URL').getOrElse('https://ap24.top/MR_Player/api.php')
+
+android {
+    namespace 'com.monopoliorecords.panelplayer'
+    compileSdk 35
+
+    defaultConfig {
+        applicationId 'com.monopoliorecords.panelplayer'
+        minSdk 23
+        targetSdk 35
+        versionCode 1
+        versionName '1.0.0'
+        buildConfigField 'String', 'PANEL_API_URL', '"' + panelApiUrl + '"'
+        buildConfigField 'String', 'PANEL_APP_KEY', '"3qOA6b2tHAwjTpvCrcz7kvJPs_d1nP65EzzeFIz2ci0"'
+    }
+
+    buildFeatures { buildConfig true }
+
+    buildTypes {
+        release {
+            minifyEnabled true
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+        }
+    }
+}
