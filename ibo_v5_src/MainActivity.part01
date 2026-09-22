@@ -1,0 +1,134 @@
+e administrator."));
+                ui.postDelayed(() -> io.execute(this::checkPanel), 8000);
+            } else {
+                showActivation(t("Esperando activación en el panel…", "Waiting for panel activation…"));
+                ui.postDelayed(() -> io.execute(this::checkPanel), 5000);
+            }
+        } catch (Exception e) {
+            if (String.valueOf(e.getMessage()).contains("unauthorized_device")) {
+                token = "";
+                getPreferences(MODE_PRIVATE).edit().remove("device_token").apply();
+                ui.postDelayed(this::bootstrap, 1000);
+            } else {
+                showActivation(t("Panel temporalmente sin respuesta.", "Panel temporarily unavailable.") + "\n" + msg(e));
+                ui.postDelayed(() -> io.execute(this::checkPanel), 7000);
+            }
+        }
+    }
+
+    private void showActivation(String message) {
+        ui.post(() -> {
+            screen = "activation";
+            releasePlayer(true);
+            root.removeAllViews();
+            root.setBackgroundColor(BG);
+            LinearLayout box = new LinearLayout(this);
+            box.setOrientation(LinearLayout.VERTICAL);
+            box.setGravity(Gravity.CENTER);
+            box.setPadding(dp(42), dp(28), dp(42), dp(28));
+
+            ImageView logo = brandLogo();
+            box.addView(logo, new LinearLayout.LayoutParams(dp(360), dp(210)));
+
+            TextView title = tv(t("Tu entretenimiento en un solo lugar", "Your entertainment in one place"), 22, TEXT, true);
+            title.setGravity(Gravity.CENTER);
+            box.addView(title, new LinearLayout.LayoutParams(-1, dp(56)));
+
+            TextView info = tv(message, 17, MUTED, false);
+            info.setGravity(Gravity.CENTER);
+            box.addView(info, new LinearLayout.LayoutParams(-1, dp(88)));
+
+            String mac = identity.mac.isEmpty() ? t("NO DISPONIBLE", "UNAVAILABLE") : identity.mac;
+            TextView ids = tv("MAC: " + mac + "    •    ID: " + identity.deviceKey.substring(0, 16).toUpperCase(), 14, MUTED, false);
+            ids.setGravity(Gravity.CENTER);
+            box.addView(ids, new LinearLayout.LayoutParams(-1, dp(48)));
+            ProgressBar p = new ProgressBar(this);
+            box.addView(p, new LinearLayout.LayoutParams(dp(42), dp(42)));
+            root.addView(box, new FrameLayout.LayoutParams(-1, -1));
+        });
+    }
+
+    private void preloadCatalogAndShowHome() {
+        CountDownLatch latch = new CountDownLatch(3);
+        for (String kind : new String[]{"live","movie","series"}) {
+            new Thread(() -> {
+                try {
+                    catalogCategories.put(kind, XtreamApi.categories(config, kind));
+                    catalogItems.put(kind, XtreamApi.items(config, kind));
+                } catch (Exception ignored) {
+                } finally { latch.countDown(); }
+            }, "preload-" + kind).start();
+        }
+        try { latch.await(); } catch (InterruptedException ignored) { Thread.currentThread().interrupt(); }
+        catalogPreloaded = !catalogItems.isEmpty();
+        ui.post(this::showHome);
+    }
+
+    private List<XtreamApi.Category> cachedCategories(String kind) {
+        List<XtreamApi.Category> x = catalogCategories.get(kind);
+        return x == null ? null : new ArrayList<>(x);
+    }
+
+    private List<XtreamApi.Item> cachedItems(String kind) {
+        List<XtreamApi.Item> x = catalogItems.get(kind);
+        return x == null ? null : new ArrayList<>(x);
+    }
+
+    private void showHome() {
+        screen = "home";
+        sectionKind = "";
+        releasePlayer(true);
+        root.removeAllViews();
+        root.setBackgroundColor(BG);
+
+        FrameLayout stage = new FrameLayout(this);
+        ImageView hero = new ImageView(this);
+        hero.setScaleType(ImageView.ScaleType.CENTER_CROP);
+        hero.setBackgroundColor(Color.rgb(16, 28, 32));
+        stage.addView(hero, new FrameLayout.LayoutParams(-1, -1));
+        View shade = new View(this);
+        shade.setBackgroundColor(Color.argb(175, 0, 0, 0));
+        stage.addView(shade, new FrameLayout.LayoutParams(-1, -1));
+
+        LinearLayout all = new LinearLayout(this);
+        all.setOrientation(LinearLayout.VERTICAL);
+        all.setPadding(dp(26), dp(16), dp(26), dp(16));
+        stage.addView(all, new FrameLayout.LayoutParams(-1, -1));
+
+        LinearLayout top = new LinearLayout(this);
+        top.setGravity(Gravity.CENTER_VERTICAL);
+        ImageView brand = brandLogo();
+        top.addView(brand, new LinearLayout.LayoutParams(dp(150), dp(58)));
+        TextView spacer = tv("", 1, TEXT, false);
+        top.addView(spacer, new LinearLayout.LayoutParams(0, dp(58), 1));
+        TextView clock = tv("", 15, TEXT, false);
+        clock.setGravity(Gravity.END | Gravity.CENTER_VERTICAL);
+        top.addView(clock, new LinearLayout.LayoutParams(dp(170), dp(58)));
+        MediaRouteButton castButton = createCastButton();
+        top.addView(castButton, new LinearLayout.LayoutParams(dp(58), dp(54)));
+        TextView settings = focusButton("⚙", 24, () -> showSettings());
+        top.addView(settings, new LinearLayout.LayoutParams(dp(62), dp(54)));
+        all.addView(top, new LinearLayout.LayoutParams(-1, dp(62)));
+        updateClock(clock);
+
+        LinearLayout heroInfo = new LinearLayout(this);
+        heroInfo.setOrientation(LinearLayout.VERTICAL);
+        heroInfo.setGravity(Gravity.BOTTOM);
+        heroInfo.setPadding(dp(10), dp(8), dp(10), dp(12));
+        TextView heroTitle = tv(t("Tu entretenimiento, organizado a tu manera", "Your entertainment, organized your way"), 32, TEXT, true);
+        TextView heroMeta = tv(t("TV en vivo • Películas • Series • Favoritos", "Live TV • Movies • Series • Favorites"), 16, MUTED, false);
+        heroInfo.addView(heroTitle, new LinearLayout.LayoutParams(-1, dp(56)));
+        heroInfo.addView(heroMeta, new LinearLayout.LayoutParams(-1, dp(38)));
+        all.addView(heroInfo, new LinearLayout.LayoutParams(-1, 0, .50f));
+        final int heroTicket = ++heroGeneration;
+        startHeroCarousel(hero, heroTitle, heroMeta, heroTicket);
+
+        LinearLayout cards = new LinearLayout(this);
+        cards.setGravity(Gravity.CENTER);
+        cards.setPadding(0, dp(8), 0, dp(8));
+        addConfiguredHomeCards(cards);
+        all.addView(cards, new LinearLayout.LayoutParams(-1, 0, .36f));
+
+        LinearLayout bottom = new LinearLayout(this);
+        bottom.setGravity(Gravity.CENTER_VERTICAL);
+        TextVi
