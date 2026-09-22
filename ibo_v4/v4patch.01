@@ -1,0 +1,87 @@
+fig.heroCategoryMatch.isEmpty())?config.heroCategoryMatch:"estreno";String cid=findPremiereCategory(cats,match);if(cid.isEmpty())return;List<XtreamApi.Item> picks=new ArrayList<>();for(XtreamApi.Item it:items)if(cid.equals(it.categoryId)&&((it.backdrop!=null&&!it.backdrop.isEmpty())||(it.icon!=null&&!it.icon.isEmpty())))picks.add(it);if(picks.isEmpty())return;ui.post(()->rotateHero(hero,title,meta,picks,0,ticket));}catch(Exception ignored){}});
++    }
++    private String findPremiereCategory(List<XtreamApi.Category> cats,String match){String m=match.toLowerCase(Locale.ROOT);String best="";int bestYear=-1;for(XtreamApi.Category c:cats){String n=c.name.toLowerCase(Locale.ROOT);if(!n.contains(m)&&!n.contains("estreno"))continue;int year=0;for(int i=0;i+3<c.name.length();i++){String q=c.name.substring(i,i+4);try{int y=Integer.parseInt(q);if(y>year)year=y;}catch(Exception ignored){}}if(best.isEmpty()||year>=bestYear){best=c.id;bestYear=year;}}return best;}
++    private void rotateHero(ImageView hero,TextView title,TextView meta,List<XtreamApi.Item> items,int index,int ticket){if(!"home".equals(screen)||ticket!=heroGeneration||items.isEmpty())return;XtreamApi.Item it=items.get(index%items.size());String img=(it.backdrop!=null&&!it.backdrop.isEmpty())?it.backdrop:it.icon;ImageLoader.load(hero,img,Color.rgb(16,28,32));title.setText(it.name);String m=(it.year==null?"":it.year)+(it.rating!=null&&!it.rating.isEmpty()?"   ★ "+it.rating:"");meta.setText(m.isEmpty()?t("Estrenos","Premieres"):m);ui.postDelayed(()->rotateHero(hero,title,meta,items,(index+1)%items.size(),ticket),2500);}
++
+     private void toggleCurrentFavorite(){if(currentPlaying==null)return;toggleFavorite(currentPlaying);if(liveMeta!=null)liveMeta.setText(prefs.isFavorite("live",currentPlaying.id)?"★ "+t("Favorito","Favorite"):t("En reproducción","Playing"));}
+     private void toggleFavorite(XtreamApi.Item item){String k="episode".equals(item.kind)?"series":item.kind;prefs.toggleFavorite(k,item.id);Toast.makeText(this,prefs.isFavorite(k,item.id)?t("Añadido a favoritos","Added to favorites"):t("Eliminado de favoritos","Removed from favorites"),Toast.LENGTH_SHORT).show();refreshSectionItems();}
+ 
+@@ -697,13 +751,33 @@
+     }
+ 
+     private void parentalDialog(){
+-        LinearLayout box=new LinearLayout(this);box.setOrientation(LinearLayout.VERTICAL);box.setPadding(dp(24),dp(8),dp(24),0);EditText pin=new EditText(this);pin.setInputType(InputType.TYPE_CLASS_NUMBER|InputType.TYPE_NUMBER_VARIATION_PASSWORD);pin.setHint("PIN");pin.setText(prefs.parentalPin());box.addView(pin);
+-        String[] opts={t("Activado","Enabled"),t("Desactivado","Disabled")};int checked=prefs.parentalEnabled()?0:1;
+-        new AlertDialog.Builder(this).setTitle(t("Control parental","Parental control")).setSingleChoiceItems(opts,checked,(d,w)->{}).setView(box).setPositiveButton(t("Guardar","Save"),(d,w)->{
+-            AlertDialog ad=(AlertDialog)d;int pos=ad.getListView().getCheckedItemPosition();String v=pin.getText().toString().trim();if(v.length()>=4)prefs.parentalPin(v);prefs.parentalEnabled(pos==0);Toast.makeText(this,t("Control parental actualizado","Parental control updated"),Toast.LENGTH_SHORT).show();
++        if (!prefs.parentalEnabled()) {
++            showSetParentalPinDialog(false);
++            return;
++        }
++        String[] a={t("Cambiar PIN","Change PIN"),t("Desactivar control parental","Disable parental control")};
++        new AlertDialog.Builder(this).setTitle(t("Control parental activado","Parental control enabled")).setItems(a,(d,w)->{
++            if(w==0)verifyCurrentPin(() -> showSetParentalPinDialog(true));
++            else verifyCurrentPin(() -> {prefs.parentalEnabled(false);parentalSessionUnlocked.clear();Toast.makeText(this,t("Control parental desactivado","Parental control disabled"),Toast.LENGTH_SHORT).show();});
+         }).setNegativeButton(t("Cancelar","Cancel"),null).show();
+     }
+ 
++    private void showSetParentalPinDialog(boolean changing){
++        LinearLayout box=new LinearLayout(this);box.setOrientation(LinearLayout.VERTICAL);box.setPadding(dp(24),dp(8),dp(24),0);
++        EditText pin=new EditText(this);pin.setInputType(InputType.TYPE_CLASS_NUMBER|InputType.TYPE_NUMBER_VARIATION_PASSWORD);pin.setHint(t("Nuevo PIN (mínimo 4 dígitos)","New PIN (minimum 4 digits)"));box.addView(pin);
++        EditText confirm=new EditText(this);confirm.setInputType(InputType.TYPE_CLASS_NUMBER|InputType.TYPE_NUMBER_VARIATION_PASSWORD);confirm.setHint(t("Confirmar PIN","Confirm PIN"));box.addView(confirm);
++        AlertDialog dialog=new AlertDialog.Builder(this).setTitle(changing?t("Cambiar PIN parental","Change parental PIN"):t("Activar control parental","Enable parental control")).setView(box).setPositiveButton(t("Guardar","Save"),null).setNegativeButton(t("Cancelar","Cancel"),null).create();
++        dialog.setOnShowListener(x->dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v->{String a=pin.getText().toString().trim(),b=confirm.getText().toString().trim();if(a.length()<4||!a.equals(b)){Toast.makeText(this,t("Los PIN deben coincidir y tener al menos 4 dígitos","PINs must match and have at least 4 digits"),Toast.LENGTH_LONG).show();return;}prefs.parentalPin(a);prefs.parentalEnabled(true);parentalSessionUnlocked.clear();Toast.makeText(this,t("Control parental activado","Parental control enabled"),Toast.LENGTH_SHORT).show();dialog.dismiss();}));
++        dialog.show();
++    }
++
++    private void verifyCurrentPin(Runnable ok){
++        EditText pin=new EditText(this);pin.setInputType(InputType.TYPE_CLASS_NUMBER|InputType.TYPE_NUMBER_VARIATION_PASSWORD);pin.setHint(t("PIN actual","Current PIN"));pin.setPadding(dp(24),0,dp(24),0);
++        AlertDialog dialog=new AlertDialog.Builder(this).setTitle(t("Confirma tu PIN","Confirm your PIN")).setView(pin).setPositiveButton(t("Confirmar","Confirm"),null).setNegativeButton(t("Cancelar","Cancel"),null).create();
++        dialog.setOnShowListener(x->dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v->{if(!prefs.parentalPin().equals(pin.getText().toString().trim())){Toast.makeText(this,t("PIN incorrecto","Incorrect PIN"),Toast.LENGTH_SHORT).show();return;}dialog.dismiss();ok.run();}));
++        dialog.show();
++    }
++
+     private void languageDialog(){String[] a={"Español","English"};int c="en".equals(prefs.language())?1:0;new AlertDialog.Builder(this).setTitle(t("Idioma","Language")).setSingleChoiceItems(a,c,(d,w)->{prefs.language(w==1?"en":"es");d.dismiss();showSettings();}).show();}
+     private void themeDialog(){String[] a={t("Elegante turquesa","Elegant teal"),t("Dorado premium","Premium gold"),t("Azul moderno","Modern blue")};String cur=prefs.theme();int c="gold".equals(cur)?1:"blue".equals(cur)?2:0;new AlertDialog.Builder(this).setTitle(t("Diseño","Design")).setSingleChoiceItems(a,c,(d,w)->{prefs.theme(w==1?"gold":w==2?"blue":"teal");applyThemeColors();d.dismiss();showSettings();}).show();}
+ 
+@@ -715,12 +789,12 @@
+ 
+     private void clearHistory(String kind){new AlertDialog.Builder(this).setTitle(t("Confirmar","Confirm")).setMessage(t("¿Borrar este historial?","Clear this history?")).setPositiveButton(t("Borrar","Clear"),(d,w)->{prefs.clearRecent(kind);Toast.makeText(this,t("Historial borrado","History cleared"),Toast.LENGTH_SHORT).show();}).setNegativeButton(t("Cancelar","Cancel"),null).show();}
+     private void liveOrderDialog(){String[] a={t("Orden del servidor","Server order"),t("Nombre A-Z","Name A-Z")};int c="name".equals(prefs.liveOrder())?1:0;new AlertDialog.Builder(this).setTitle(t("Canales en vivo","Live channels")).setSingleChoiceItems(a,c,(d,w)->{prefs.liveOrder(w==1?"name":"server");d.dismiss();}).show();}
+-    private void liveFormatDialog(){String[] a={"TS","HLS / M3U8"};int c="m3u8".equals(prefs.liveFormat())?1:0;new AlertDialog.Builder(this).setTitle(t("Live Stream Format","Live Stream Format")).setSingleChoiceItems(a,c,(d,w)->{prefs.liveFormat(w==1?"m3u8":"ts");d.dismiss();}).show();}
++    private void liveFormatDialog(){String[] a={"TS","HLS / M3U8"};int c="m3u8".equals(prefs.liveFormat())?1:0;new AlertDialog.Builder(this).setTitle(t("Formato de transmisión en vivo","Live Stream Format")).setSingleChoiceItems(a,c,(d,w)->{String f=w==1?"m3u8":"ts";prefs.liveFormat(f);releasePlayer(false);Toast.makeText(this,t("Formato guardado: ","Format saved: ")+("m3u8".equals(f)?"HLS / M3U8":"TS"),Toast.LENGTH_SHORT).show();d.dismiss();}).show();}
+     private void playerDialog(){String[] a={t("Interno (recomendado)","Internal (recommended)"),t("Externo","External"),t("Automático con respaldo externo","Automatic with external fallback")};String m=prefs.playerMode();int c="external".equals(m)?1:"auto".equals(m)?2:0;new AlertDialog.Builder(this).setTitle(t("Reproductor","Player")).setSingleChoiceItems(a,c,(d,w)->{prefs.playerMode(w==1?"external":w==2?"auto":"internal");d.dismiss();}).show();}
+ 
+     private void externalPlayerDialog(){
+         Intent intent=new Intent(Intent.ACTION_VIEW);intent.setDataAndType(Uri.parse("https://example.com/video.mp4"),"video/*");List<ResolveInfo> rs=getPackageManager().queryIntentActivities(intent,PackageManager.MATCH_DEFAULT_ONLY);if(rs.isEmpty()){Toast.makeText(this,t("No se encontraron reproductores externos","No external players found"),Toast.LENGTH_LONG).show();return;}
+-        String[] names=new String[rs.size()+1];String[] pkgs=new String[rs.size()+1];names[0]=t("Selector de Android","Android chooser");pkgs[0]="";int checked=0;String cur=prefs.externalPackage();for(int i=0;i<rs.size();i++){ResolveInfo r=rs.get(i);names[i+1]=String.valueOf(r.loadLabel(getPackageManager()));pkgs[i+1]=r.activityInfo.packageName;if(cur.equals(pkgs[i+1]))checked=i+1;}final int[] sel={checked};new AlertDialog.Builder(this).setTitle(t("Player externo","External player")).setSingleChoiceItems(names,checked,(d,w)->sel[0]=w).setPositiveButton(t("Guardar","Save"),(d,w)->prefs.externalPackage(pkgs[sel[0]])).setNegativeButton(t("Cancelar","Cancel"),null).show();
++        String[] names=new String[rs.size()+1];String[] pkgs=new String[rs.size()+1];names[0]=t("Selector de Android","Android chooser");pkgs[0]="";int checked=0;String cur=prefs.externalPackage();for(int i=0;i<rs.size();i++){ResolveInfo r=rs.get(i);names[i+1]=String.valueOf(r.loadLabel(getPackageManager()));pkgs[i+1]=r.activityInfo.packageName;if(cur.equals(pkgs[i+1]))checked=i+1;}final int[] sel={checked};new AlertDialog.Builder(this).setTitle(t("Player externo","External player")).setSingleChoiceItems(names,checked,(d,w)->sel[0]=w).setPositiveButton(t("Guardar","Save"),(d,w)->{prefs.externalPackage(pkgs[sel[0]]);prefs.playerMode("external");Toast.makeText(this,t("Reproductor externo establecido como predeterminado","External player set as default"),Toast.LENGTH_SHORT).show();}).setNegativeButton(t("Cancelar","Cancel"),null).show();
+     }
+ 
+     private void automaticDialog(){String[] a={t("Vista previa automática de canales: ON","Automatic channel preview: ON"),t("Vista previa automática de canales: OFF","Automatic channel preview: OFF")};int c=prefs.autoPreview()?0:1;new AlertDialog.Builder(this).setTitle(t("Automático","Automatic")).setSingleChoiceItems(a,c,(d,w)->{prefs.autoPreview(w==0);d.dismiss();}).show();}
+@@ -755,7 +829,8 @@
+         v.setScaleType(ImageView.ScaleType.CENTER_INSIDE);
+         v.setAdjustViewBounds(true);
+         v.setPadding(dp(4),dp(2),dp(4),dp(2));
+-        ImageLoader.load(v, "https://ap24.top/ibo/tv_digital_logo.png", Color.TRANSPARENT);
++        String remote=config==null?"":config.brandLogoUrl;
++        if(remote!=null&&!remote.isEmpty())ImageLoader.load(v,remote,Color.TRANSPARENT);else v.setImageResource(com.monopolio.mediaplayeribo.R.drawable.tv_digital_icon);
+         return v;
+     }
+ 
+@@ -787,10 +862,12 @@
+             LinearLayout row=v instanceof LinearLayout?(LinearLayout)v:new LinearLayout(MainActivity.this);
+             row.removeAllViews();row.setGravity(Gravity.CENTER_VERTICAL);row.setPadding(dp(12),0,dp(10),0);
+             CatRow x=data.get(p);
+-            TextView n=tv(x.name,14,x.id.equals(selectedCategory)?SELECTED:TEXT,false);row.addView(n,new LinearLayout.LayoutParams(0,dp(42),1));
++            String shown=(prefs.parentalEnabled()&&!x.id.startsWith("__")&&isAdultName(x.name)?"🔒 ":"")+x.name;
++            TextView n=tv(shown,14,x.id.equals(selectedCategory)?SELECTED:TEXT,false);row.addView(n,new LinearLayout.LayoutParams(0,dp(42),1));
+             TextView c=tv(String.valueOf(x.count),13,x.id.equals(selectedCategory)?SELECTED:MUTED,false);c.setGravity(Gravity.END|Gravity.CENTER_VERTICAL);row.addView(c,new LinearLayout.LayoutParams(dp(54),dp(42)));
+-            row.setBackgroundColor(x.id.equals(selectedCategory)?Color.rgb(18,49,53):(p%2==0?PANEL:PANEL2));
+-            wireAction(row,()->{selectedCategory=x.id;refreshSectionItems();if(categoryList!=null)categoryList.setSelection(p);});
++            row.setBackground(x.id.equals(selectedCategory)?round(Color.rgb(18,49,53),SELECTED,1,4):round(p%2==0?PANEL:PANEL2,Color.TRANSPARENT,0,4));
++            wireAction(row,()->runWithParentalForCategory(x.id,()->{selectedCategory=x.id;refreshSectionItems();if(categoryList!=null){categoryList.setSelection(p);categoryList.invalidateViews();}}));
++            row.setOnFocusChangeListener((z,h)->{if(!x.id.equals(selectedCategory))z.setBackground(round(h?Color.rgb(13,42,47):(p%2==0?PANEL:PANEL2),h?ACCENT:Color.TRANSPARENT,h?1:0,4));});
+             row.setOnLongClickListener(z->{if(x.id.startsWith("__"))return false;Set<String> hidden=prefs.hiddenCategories(sectionKind);hidden.add(x.id);prefs.hiddenCategories(sectionKind,hidden);Toast.makeText(MainActivity.this,t("Categoría oculta","Category hidden"),Toast.LENGTH_SHORT).show();loadSection(sectionKind,"");return true;});
+             return row;
+         }
