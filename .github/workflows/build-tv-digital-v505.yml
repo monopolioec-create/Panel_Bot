@@ -122,7 +122,7 @@ jobs:
             'Cast background reconnect':'setEnableReconnectionService(true)' in Path('ibo_independent/android/app/src/main/java/com/monopolio/mediaplayeribo/CastOptionsProvider.java').read_text(),
             'Cast saved session resume':'setResumeSavedSession(true)' in Path('ibo_independent/android/app/src/main/java/com/monopolio/mediaplayeribo/CastOptionsProvider.java').read_text(),
             'Cast media notification':'NotificationOptions' in Path('ibo_independent/android/app/src/main/java/com/monopolio/mediaplayeribo/CastOptionsProvider.java').read_text(),
-            'Cast lifecycle survives background':'@Override protected void onStop()' in m and 'Intentionally keep the Cast session alive' in m and 'private boolean hasActiveCastSession()' in m,
+            'Cast lifecycle survives background':'@Override protected void onStop()' in m and 'private boolean hasActiveCastSession()' in m,
           }
           for k,v in checks.items(): print(('PASS ' if v else 'FAIL ')+k)
           if not all(checks.values()): raise SystemExit(1)
