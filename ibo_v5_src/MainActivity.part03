@@ -1,0 +1,111 @@
+yout.LayoutParams(-1, dp(58)));
+
+        LinearLayout body = new LinearLayout(this);
+        body.setOrientation(LinearLayout.HORIZONTAL);
+        categoryList = new ListView(this);
+        categoryList.setDividerHeight(1);
+        categoryList.setBackgroundColor(PANEL);
+        body.addView(categoryList, new LinearLayout.LayoutParams(dp(248), -1));
+
+        if ("live".equals(sectionKind)) buildLiveBody(body);
+        else buildMediaBody(body);
+
+        all.addView(body, new LinearLayout.LayoutParams(-1, 0, 1));
+        footer = tv(t("OK: abrir    •    Mantén OK: favorito    •    BACK: casa", "OK: open    •    Hold OK: favorite    •    BACK: home"), 13, MUTED, false);
+        footer.setPadding(dp(14), 0, dp(14), 0);
+        all.addView(footer, new LinearLayout.LayoutParams(-1, dp(34)));
+        root.addView(all, new FrameLayout.LayoutParams(-1, -1));
+
+        setupCategoryList();
+        refreshSectionItems();
+    }
+
+    private View topNav() {
+        LinearLayout bar = new LinearLayout(this);
+        bar.setGravity(Gravity.CENTER_VERTICAL);
+        bar.setPadding(dp(12), dp(5), dp(12), dp(5));
+        bar.setBackgroundColor(Color.rgb(5, 13, 16));
+        bar.addView(navButton(t("Casa", "Home"), "home", this::showHome), navLp(82));
+        bar.addView(separator(), new LinearLayout.LayoutParams(dp(1), dp(30)));
+        bar.addView(navButton(t("TV en vivo", "Live TV"), "live", () -> loadSection("live", "")), navLp(118));
+        bar.addView(separator(), new LinearLayout.LayoutParams(dp(1), dp(30)));
+        bar.addView(navButton(t("Películas", "Movies"), "movie", () -> loadSection("movie", "")), navLp(108));
+        bar.addView(separator(), new LinearLayout.LayoutParams(dp(1), dp(30)));
+        bar.addView(navButton(t("Series", "Series"), "series", () -> loadSection("series", "")), navLp(90));
+        bar.addView(separator(), new LinearLayout.LayoutParams(dp(1), dp(30)));
+
+        searchBox = new EditText(this);
+        searchBox.setSingleLine(true);
+        searchBox.setTextColor(TEXT);
+        searchBox.setHintTextColor(Color.rgb(122, 139, 145));
+        searchBox.setHint(t("Buscar…", "Search…"));
+        searchBox.setTextSize(15);
+        searchBox.setPadding(dp(16), 0, dp(16), 0);
+        searchBox.setBackground(round(Color.rgb(7, 13, 16), Color.rgb(100, 113, 117), 1, 22));
+        searchBox.setImeOptions(EditorInfo.IME_ACTION_SEARCH);
+        LinearLayout.LayoutParams sp = new LinearLayout.LayoutParams(dp(285), dp(42));
+        sp.setMargins(dp(18), 0, 0, 0);
+        bar.addView(searchBox, sp);
+        searchBox.addTextChangedListener(new TextWatcher() {
+            @Override public void beforeTextChanged(CharSequence s, int st, int c, int a) {}
+            @Override public void onTextChanged(CharSequence s, int st, int b, int c) { sectionSearch = s.toString().trim().toLowerCase(Locale.US); refreshSectionItems(); }
+            @Override public void afterTextChanged(Editable e) {}
+        });
+
+        TextView flex = tv("", 1, TEXT, false);
+        bar.addView(flex, new LinearLayout.LayoutParams(0, dp(42), 1));
+        MediaRouteButton castButton = createCastButton();
+        bar.addView(castButton, new LinearLayout.LayoutParams(dp(48), dp(42)));
+        ImageView brand = brandLogo();
+        bar.addView(brand, new LinearLayout.LayoutParams(dp(92), dp(42)));
+        TextView set = focusButton("⚙", 20, this::showSettings);
+        bar.addView(set, new LinearLayout.LayoutParams(dp(52), dp(42)));
+        return bar;
+    }
+
+    private LinearLayout.LayoutParams navLp(int w) { return new LinearLayout.LayoutParams(dp(w), dp(42)); }
+    private View separator() { View v = new View(this); v.setBackgroundColor(Color.rgb(91, 103, 108)); return v; }
+
+    private TextView navButton(String label, String kind, Runnable action) {
+        boolean active = sectionKind.equals(kind);
+        TextView v = tv(label, 16, active ? SELECTED : Color.rgb(210, 218, 220), false);
+        v.setGravity(Gravity.CENTER);
+        wireAction(v, action);
+        v.setOnFocusChangeListener((x,h) -> x.setBackgroundColor(h ? Color.rgb(18, 43, 47) : Color.TRANSPARENT));
+        return v;
+    }
+
+    private void buildLiveBody(LinearLayout body) {
+        liveList = new ListView(this);
+        liveList.setDividerHeight(1);
+        liveList.setBackgroundColor(Color.rgb(13, 18, 21));
+        body.addView(liveList, new LinearLayout.LayoutParams(dp(300), -1));
+
+        LinearLayout previewCol = new LinearLayout(this);
+        previewCol.setOrientation(LinearLayout.VERTICAL);
+        previewCol.setBackgroundColor(Color.BLACK);
+        livePreview = new FrameLayout(this);
+        livePreview.setBackgroundColor(Color.BLACK);
+        TextView hint = tv(t("Selecciona un canal", "Select a channel"), 18, Color.rgb(115, 126, 130), false);
+        hint.setGravity(Gravity.CENTER);
+        livePreview.addView(hint, new FrameLayout.LayoutParams(-1, -1));
+        previewCol.addView(livePreview, new LinearLayout.LayoutParams(-1, 0, 1));
+        liveTitle = tv("", 19, TEXT, true);
+        liveTitle.setPadding(dp(12), 0, dp(12), 0);
+        previewCol.addView(liveTitle, new LinearLayout.LayoutParams(-1, dp(46)));
+        liveMeta = tv("", 13, MUTED, false);
+        liveMeta.setPadding(dp(12), 0, dp(12), 0);
+        previewCol.addView(liveMeta, new LinearLayout.LayoutParams(-1, dp(34)));
+
+        LinearLayout actions = new LinearLayout(this);
+        actions.setGravity(Gravity.END | Gravity.CENTER_VERTICAL);
+        actions.setPadding(dp(8), dp(4), dp(8), dp(6));
+        actions.addView(actionButton(t("Pantalla completa", "Fullscreen"), () -> { if (currentPlaying != null) playFull(currentPlaying); }), actionLp());
+        actions.addView(actionButton(t("Favorito", "Favorite"), this::toggleCurrentFavorite), actionLp());
+        actions.addView(actionButton(t("Buscar", "Search"), () -> searchBox.requestFocus()), actionLp());
+        previewCol.addView(actions, new LinearLayout.LayoutParams(-1, dp(54)));
+        body.addView(previewCol, new LinearLayout.LayoutParams(0, -1, 1));
+    }
+
+    private LinearLayout.LayoutParams actionLp() { LinearLayout.LayoutParams p=new LinearLayout.LayoutParams(dp(155),dp(42));p.setMargins(dp(5),0,dp(5),0);return p; }
+    private TextView actionButton(String s,Runnable r){TextView v=tv(s,13,TEXT,true);v.setGravity(Gravity.CENTER);v.setBackground(round(Color.rgb(4,48,55),ACCENT,1,12));wireAction(v,r);v.setOnFocusChangeListener((x,h)->x.setBackground(round(h?Color.rgb(9,77,84):Color.rgb(4,48,55
