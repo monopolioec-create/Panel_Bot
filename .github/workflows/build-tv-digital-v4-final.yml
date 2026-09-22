@@ -37,14 +37,14 @@ jobs:
 
       - name: Apply V4 APK-only changes
         run: |
-          cat ibo_v4/v4patch.00 ibo_v4/v4patch.01 ibo_v4/v4patch.02 > /tmp/v4.patch
+          cat ibo_v4/v4line.00 ibo_v4/v4line.01 ibo_v4/v4line.02 ibo_v4/v4line.03 > /tmp/v4.patch
           cd ibo_independent/android/app/src/main/java/com/monopolio/mediaplayeribo
           patch -p1 < /tmp/v4.patch
           cd "$GITHUB_WORKSPACE"
 
           # Bring the exact TV DIGITAL brand into the APK launcher resources.
           mkdir -p ibo_independent/android/app/src/main/res/drawable
-          curl -L --fail --retry 3 https://ap24.top/ibo/tv_digital_logo.png -o ibo_independent/android/app/src/main/res/drawable/tv_digital_icon.png
+          cp ibo_v4/tv_digital_icon.png ibo_independent/android/app/src/main/res/drawable/tv_digital_icon.png
 
           python3 - <<'PY'
           from pathlib import Path
