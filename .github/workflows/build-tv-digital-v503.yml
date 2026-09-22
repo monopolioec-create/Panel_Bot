@@ -50,11 +50,10 @@ jobs:
         run: |
           RES=ibo_independent/android/app/src/main/res
           mkdir -p "$RES/drawable" "$RES/values" "$RES/mipmap-mdpi" "$RES/mipmap-hdpi" "$RES/mipmap-xhdpi" "$RES/mipmap-xxhdpi" "$RES/mipmap-xxxhdpi" "$RES/mipmap-anydpi-v26"
-          cat ibo_v5_src/icon96.part00 ibo_v5_src/icon96.part01 ibo_v5_src/icon96.part02 ibo_v5_src/icon96.part03 > /tmp/tv_icon_valid_96.b64
-          test "$(wc -c < /tmp/tv_icon_valid_96.b64)" -eq 12752
-          base64 -d /tmp/tv_icon_valid_96.b64 > /tmp/tv_digital_icon.png
+          curl -L --fail --retry 4 --connect-timeout 15 "https://ap24.top/ibo/tv_digital_logo.png" -o /tmp/tv_digital_icon.png
           file /tmp/tv_digital_icon.png | tee /tmp/icon_file.txt
-          grep -q 'PNG image data, 96 x 96' /tmp/icon_file.txt
+          grep -q 'PNG image data' /tmp/icon_file.txt
+          test "$(wc -c < /tmp/tv_digital_icon.png)" -gt 50000
 
           cp /tmp/tv_digital_icon.png "$RES/drawable/tv_digital_icon.png"
           cp /tmp/tv_digital_icon.png "$RES/drawable/tv_digital_banner.png"
