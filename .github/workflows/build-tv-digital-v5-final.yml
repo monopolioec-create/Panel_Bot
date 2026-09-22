@@ -36,7 +36,7 @@ jobs:
 
       - name: Apply V5 final code
         run: |
-          cat ibo_v5/code.b64.00 ibo_v5/code.b64.01 ibo_v5/code.b64.02 ibo_v5/code.b64.03a ibo_v5/code.b64.03b ibo_v5/code.b64.03c ibo_v5/code.b64.04a ibo_v5/code.b64.04b ibo_v5/code.b64.05r ibo_v5/code.b64.05 ibo_v5/code.b64.06 | tr -cd 'A-Za-z0-9+/=' > /tmp/v5code.b64
+          cat ibo_v5/code.b64.00 ibo_v5/code.b64.01 ibo_v5/code.b64.02 ibo_v5/code.b64.03a ibo_v5/code.b64.03b ibo_v5/code.b64.03c ibo_v5/code.b64.04a ibo_v5/code.b64.04b ibo_v5/code.b64.05a ibo_v5/code.b64.05b ibo_v5/code.b64.05 ibo_v5/code.b64.06 | tr -cd 'A-Za-z0-9+/=' > /tmp/v5code.b64
           echo "assembled base64 bytes: $(wc -c < /tmp/v5code.b64)"
           test "$(wc -c < /tmp/v5code.b64)" -eq 29216
           base64 -d /tmp/v5code.b64 > /tmp/TV_DIGITAL_V5_CODE.zip
