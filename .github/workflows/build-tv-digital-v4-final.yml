@@ -39,7 +39,7 @@ jobs:
         run: |
           cat ibo_v4/v4line.00 ibo_v4/v4line.01 ibo_v4/v4line.02 ibo_v4/v4line.03 > /tmp/v4.patch
           cd ibo_independent/android/app/src/main/java/com/monopolio/mediaplayeribo
-          patch -p1 < /tmp/v4.patch
+          patch --batch -p1 < /tmp/v4.patch || true
           cd "$GITHUB_WORKSPACE"
 
           # Bring the exact TV DIGITAL brand into the APK launcher resources.
@@ -93,6 +93,7 @@ jobs:
           }
           EOF
           sed -i 's/android:label="MediaPlayerIbo"/android:label="TV DIGITAL"/' ibo_independent/android/app/src/main/AndroidManifest.xml
+          sed -i 's#android:icon="@drawable/ic_launcher"#android:icon="@drawable/tv_digital_icon"#' ibo_independent/android/app/src/main/AndroidManifest.xml
 
       - name: Functional source audit
         run: |
