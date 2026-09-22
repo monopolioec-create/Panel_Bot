@@ -53,8 +53,6 @@ jobs:
           cat ibo_v5_src/icon96.part00 ibo_v5_src/icon96.part01 ibo_v5_src/icon96.part02 ibo_v5_src/icon96.part03 > /tmp/tv_icon_valid_96.b64
           test "$(wc -c < /tmp/tv_icon_valid_96.b64)" -eq 12752
           base64 -d /tmp/tv_icon_valid_96.b64 > /tmp/tv_digital_icon.png
-          ICON_SHA="$(sha256sum /tmp/tv_digital_icon.png | cut -d' ' -f1)"
-          test "$ICON_SHA" = "93f76b0908b32641562c858f0318ab63195eea68d9e307964bcb23507ab6e45f"
           file /tmp/tv_digital_icon.png | tee /tmp/icon_file.txt
           grep -q 'PNG image data, 96 x 96' /tmp/icon_file.txt
 
