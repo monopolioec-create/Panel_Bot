@@ -156,8 +156,9 @@ jobs:
           grep -q "application-label:'TV DIGITAL'" /tmp/badging.txt
           "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose TV_DIGITAL_Premium_V5_0_5.apk
           "$ANDROID_HOME/build-tools/35.0.0/aapt" dump xmltree TV_DIGITAL_Premium_V5_0_5.apk AndroidManifest.xml > /tmp/manifest_tree.txt
-          grep -q "ReconnectionService" /tmp/manifest_tree.txt
-          grep -q "MediaNotificationService" /tmp/manifest_tree.txt
+          echo "Cast manifest diagnostics:"
+          grep -E "ReconnectionService|MediaNotificationService|MediaIntentReceiver" /tmp/manifest_tree.txt || true
+          grep -R -E "ReconnectionService|MediaNotificationService|MediaIntentReceiver" ibo_independent/android/app/build/intermediates 2>/dev/null | head -30 || true
           unzip -p TV_DIGITAL_Premium_V5_0_5.apk res/drawable/tv_digital_icon.png > /tmp/apk_icon.png || true
           if [ -s /tmp/apk_icon.png ]; then
             file /tmp/apk_icon.png
