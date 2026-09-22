@@ -1,0 +1,125 @@
+),h?SELECTED:ACCENT,h?2:1,12)));return v;}
+
+    private void buildMediaBody(LinearLayout body) {
+        LinearLayout right = new LinearLayout(this);
+        right.setOrientation(LinearLayout.VERTICAL);
+        right.setPadding(dp(16), dp(12), dp(16), dp(8));
+        LinearLayout hdr = new LinearLayout(this);
+        hdr.setGravity(Gravity.CENTER_VERTICAL);
+        TextView sort = actionButton(t("Ordenar", "Sort"), this::cycleSort);
+        hdr.addView(sort, new LinearLayout.LayoutParams(dp(190), dp(42)));
+        sectionCount = tv("", 20, TEXT, false);
+        sectionCount.setGravity(Gravity.END | Gravity.CENTER_VERTICAL);
+        hdr.addView(sectionCount, new LinearLayout.LayoutParams(0, dp(42), 1));
+        right.addView(hdr, new LinearLayout.LayoutParams(-1, dp(48)));
+
+        mediaGrid = new GridView(this);
+        mediaGrid.setNumColumns(gridColumns());
+        mediaGrid.setHorizontalSpacing(dp(12));
+        mediaGrid.setVerticalSpacing(dp(12));
+        mediaGrid.setStretchMode(GridView.STRETCH_COLUMN_WIDTH);
+        mediaGrid.setClipToPadding(false);
+        mediaGrid.setPadding(0, dp(4), 0, dp(8));
+        mediaGrid.setBackgroundColor(BG);
+        right.addView(mediaGrid, new LinearLayout.LayoutParams(-1, 0, 1));
+        body.addView(right, new LinearLayout.LayoutParams(0, -1, 1));
+    }
+
+    private int gridColumns() {
+        String d=prefs.deviceType();
+        if("phone".equals(d))return 4;
+        if("tablet".equals(d))return 4;
+        return 5;
+    }
+
+    private void setupCategoryList() {
+        final List<CatRow> rows = buildCategoryRows();
+        categoryList.setAdapter(new CategoryAdapter(rows));
+        int selected = 0;
+        for (int i=0;i<rows.size();i++) if(rows.get(i).id.equals(selectedCategory)){selected=i;break;}
+        categoryList.setSelection(selected);
+        categoryList.setOnItemClickListener((p,v,pos,id)->{
+            CatRow r=rows.get(pos);
+            runWithParentalForCategory(r.id, () -> {
+                selectedCategory=r.id;
+                refreshSectionItems();
+                categoryList.invalidateViews();
+                v.animate().scaleX(1.015f).scaleY(1.015f).setDuration(70).withEndAction(() -> v.animate().scaleX(1f).scaleY(1f).setDuration(90).start()).start();
+            });
+        });
+        categoryList.setOnItemLongClickListener((p,v,pos,id)->{
+            CatRow r=rows.get(pos);
+            if(r.id.startsWith("__"))return false;
+            Set<String> hidden=prefs.hiddenCategories(sectionKind);
+            hidden.add(r.id);prefs.hiddenCategories(sectionKind,hidden);
+            Toast.makeText(this,t("Categoría oculta","Category hidden"),Toast.LENGTH_SHORT).show();
+            loadSection(sectionKind,"");
+            return true;
+        });
+    }
+
+    private List<CatRow> buildCategoryRows() {
+        Map<String,Integer> counts=new HashMap<>();
+        for(XtreamApi.Item x:sectionAll)counts.put(x.categoryId,counts.containsKey(x.categoryId)?counts.get(x.categoryId)+1:1);
+        List<CatRow> rows=new ArrayList<>();
+        int fav=0;for(XtreamApi.Item x:sectionAll)if(prefs.isFavorite(sectionKind,x.id))fav++;
+        int rec=0;Set<String> recSet=new HashSet<>(prefs.recent(sectionKind));for(XtreamApi.Item x:sectionAll)if(recSet.contains(x.id))rec++;
+        if(!"live".equals(sectionKind))rows.add(new CatRow("__recent",t("Visto recientemente","Recently watched"),rec));
+        else rows.add(new CatRow("__recent",t("Canales recientes","Recent channels"),rec));
+        rows.add(new CatRow("__fav",t("Favoritos","Favorites"),fav));
+        rows.add(new CatRow("__all","ALL",sectionAll.size()));
+        for(XtreamApi.Category c:sectionCategories)rows.add(new CatRow(c.id,c.name,counts.containsKey(c.id)?counts.get(c.id):0));
+        return rows;
+    }
+
+    private void refreshSectionItems() {
+        if (sectionAll == null || sectionKind.isEmpty()) return;
+        List<XtreamApi.Item> out=new ArrayList<>();
+        Set<String> fav=prefs.favorites(sectionKind);
+        List<String> rec=prefs.recent(sectionKind);
+        Set<String> recSet=new HashSet<>(rec);
+        for(XtreamApi.Item x:sectionAll){
+            boolean ok;
+            if("__fav".equals(selectedCategory))ok=fav.contains(x.id);
+            else if("__recent".equals(selectedCategory))ok=recSet.contains(x.id);
+            else if("__all".equals(selectedCategory))ok=true;
+            else ok=selectedCategory.equals(x.categoryId);
+            if(!ok)continue;
+            if(!sectionSearch.isEmpty()&&!x.name.toLowerCase(Locale.US).contains(sectionSearch))continue;
+            out.add(x);
+        }
+        if("__recent".equals(selectedCategory)){
+            Collections.sort(out,(a,b)->Integer.compare(indexOf(rec,a.id),indexOf(rec,b.id)));
+        } else sortItems(out);
+        sectionFiltered=out;
+
+        if("live".equals(sectionKind)){
+            if(liveList!=null){
+                liveList.setAdapter(new LiveAdapter(out));
+                liveList.setOnItemClickListener((p,v,pos,id)->playLive(out.get(pos)));
+                liveList.setOnItemLongClickListener((p,v,pos,id)->{toggleFavorite(out.get(pos));return true;});
+                if(!out.isEmpty()&&prefs.autoPreview())ui.postDelayed(()->{if(!out.isEmpty())playLive(out.get(0));},350);
+            }
+        }else{
+            if(sectionCount!=null)sectionCount.setText(selectedCategoryLabel()+" ("+out.size()+")");
+            if(mediaGrid!=null){
+                mediaGrid.setAdapter(new MediaAdapter(out));
+                mediaGrid.setOnItemClickListener((p,v,pos,id)->{
+                    XtreamApi.Item item=out.get(pos);
+                    if("series".equals(item.kind))openSeries(item);else playFull(item);
+                });
+                mediaGrid.setOnItemLongClickListener((p,v,pos,id)->{toggleFavorite(out.get(pos));return true;});
+            }
+        }
+    }
+
+    private int indexOf(List<String> xs,String id){int i=xs.indexOf(id);return i<0?99999:i;}
+    private void sortItems(List<XtreamApi.Item> out){
+        String mode="live".equals(sectionKind)?prefs.liveOrder():prefs.mediaSort();
+        if("name".equals(mode))Collections.sort(out,Comparator.comparing(x->x.name.toLowerCase(Locale.US)));
+        else if("rating".equals(mode))Collections.sort(out,(a,b)->Double.compare(parseRating(b.rating),parseRating(a.rating)));
+    }
+    private double parseRating(String r){try{return Double.parseDouble(r.replace(",","."));}catch(Exception e){return 0;}}
+
+    private void cycleSort(){
+        if("live".equals(
