@@ -143,7 +143,7 @@ jobs:
           grep -q 'toggleFavorite(item)' "$MAIN"
           grep -q 'Categoría oculta' "$MAIN"
           ! grep -q 'Comparator.comparing' "$MAIN"
-          grep -q '@androidx.media3.common.util.UnstableApi' "$MAIN"
+          grep -q '@androidx.annotation.OptIn(markerClass = androidx.media3.common.util.UnstableApi.class)' "$MAIN"
           test "$(grep -c 'new SettingItem' "$MAIN")" -ge 15
           grep -q 'android.hardware.touchscreen.*required="false"' ibo_independent/android/app/src/main/AndroidManifest.xml
           grep -q 'android.software.leanback.*required="false"' ibo_independent/android/app/src/main/AndroidManifest.xml
