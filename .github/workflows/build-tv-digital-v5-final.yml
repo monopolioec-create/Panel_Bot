@@ -36,7 +36,10 @@ jobs:
 
       - name: Apply V5 final code
         run: |
-          unzip -o ibo_v5/TV_DIGITAL_V5_CODE.zip -d ibo_independent/android
+          cat ibo_v5/code.b64.00 ibo_v5/code.b64.01 ibo_v5/code.b64.02 ibo_v5/code.b64.03a ibo_v5/code.b64.03b ibo_v5/code.b64.03c ibo_v5/code.b64.04 ibo_v5/code.b64.05x ibo_v5/code.b64.05 ibo_v5/code.b64.06 > /tmp/v5code.b64
+          base64 -d /tmp/v5code.b64 > /tmp/TV_DIGITAL_V5_CODE.zip
+          unzip -t /tmp/TV_DIGITAL_V5_CODE.zip
+          unzip -o /tmp/TV_DIGITAL_V5_CODE.zip -d ibo_independent/android
           # Ensure icon exists for normal, round and Android-TV launcher use.
           test -f ibo_independent/android/app/src/main/res/drawable/tv_digital_icon.png
           sed -i 's/android:label="MediaPlayerIbo"/android:label="TV DIGITAL"/' ibo_independent/android/app/src/main/AndroidManifest.xml
