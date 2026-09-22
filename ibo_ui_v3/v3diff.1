@@ -1,0 +1,40 @@
+nButton("‹",this::showHome);h.addView(back,new LinearLayout.LayoutParams(dp(60),dp(46)));TextView title=tv(t("Ajustes","Settings"),27,TEXT,false);title.setGravity(Gravity.CENTER);h.addView(title,new LinearLayout.LayoutParams(0,dp(46),1));TextView blank=tv("",1,TEXT,false);h.addView(blank,new LinearLayout.LayoutParams(dp(60),dp(46)));all.addView(h,new LinearLayout.LayoutParams(-1,dp(58)));
++        LinearLayout h=new LinearLayout(this);h.setGravity(Gravity.CENTER_VERTICAL);TextView back=actionButton("‹",this::showHome);h.addView(back,new LinearLayout.LayoutParams(dp(60),dp(46)));TextView title=tv(t("Ajustes • TV DIGITAL","Settings • TV DIGITAL"),27,TEXT,false);title.setGravity(Gravity.CENTER);h.addView(title,new LinearLayout.LayoutParams(0,dp(46),1));TextView blank=tv("",1,TEXT,false);h.addView(blank,new LinearLayout.LayoutParams(dp(60),dp(46)));all.addView(h,new LinearLayout.LayoutParams(-1,dp(58)));
+         GridView grid=new GridView(this);grid.setNumColumns(4);grid.setHorizontalSpacing(dp(12));grid.setVerticalSpacing(dp(12));List<SettingItem> data=settingsItems();grid.setAdapter(new SettingsAdapter(data));grid.setOnItemClickListener((p,v,pos,id)->data.get(pos).action.run());all.addView(grid,new LinearLayout.LayoutParams(-1,0,1));root.addView(all,new FrameLayout.LayoutParams(-1,-1));if(!data.isEmpty())grid.requestFocus();
+     }
+ 
+@@ -746,7 +736,29 @@
+     private void showLoading(String s){screen="loading";releasePlayer(false);root.removeAllViews();root.setBackgroundColor(BG);LinearLayout b=new LinearLayout(this);b.setOrientation(LinearLayout.VERTICAL);b.setGravity(Gravity.CENTER);ProgressBar p=new ProgressBar(this);b.addView(p,new LinearLayout.LayoutParams(dp(54),dp(54)));TextView t=tv(s,19,TEXT,false);t.setGravity(Gravity.CENTER);LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(-1,dp(72));lp.topMargin=dp(10);b.addView(t,lp);root.addView(b,new FrameLayout.LayoutParams(-1,-1));}
+     private void showError(String title,Exception e,Runnable back){root.removeAllViews();LinearLayout b=new LinearLayout(this);b.setOrientation(LinearLayout.VERTICAL);b.setGravity(Gravity.CENTER);TextView a=tv(title,25,TEXT,true);a.setGravity(Gravity.CENTER);b.addView(a,new LinearLayout.LayoutParams(-1,dp(70)));TextView m=tv(msg(e),16,MUTED,false);m.setGravity(Gravity.CENTER);b.addView(m,new LinearLayout.LayoutParams(-1,dp(90)));TextView v=actionButton(t("VOLVER","BACK"),back);b.addView(v,new LinearLayout.LayoutParams(dp(220),dp(54)));root.addView(b,new FrameLayout.LayoutParams(-1,-1));v.requestFocus();}
+ 
+-    private TextView focusButton(String s,int size,Runnable r){TextView v=tv(s,size,TEXT,true);v.setGravity(Gravity.CENTER);v.setFocusable(true);v.setClickable(true);v.setBackground(round(Color.argb(185,7,31,35),ACCENT,1,10));v.setOnClickListener(x->r.run());v.setOnFocusChangeListener((x,h)->x.setBackground(round(h?Color.rgb(17,69,75):Color.argb(185,7,31,35),h?SELECTED:ACCENT,h?2:1,10)));return v;}
++    private TextView focusButton(String s,int size,Runnable r){TextView v=tv(s,size,TEXT,true);v.setGravity(Gravity.CENTER);v.setBackground(round(Color.argb(185,7,31,35),ACCENT,1,10));wireAction(v,r);v.setOnFocusChangeListener((x,h)->x.setBackground(round(h?Color.rgb(17,69,75):Color.argb(185,7,31,35),h?SELECTED:ACCENT,h?2:1,10)));return v;}
++    static void wireAction(View v, Runnable action){
++        v.setFocusable(true);
++        v.setClickable(true);
++        v.setOnClickListener(x -> action.run());
++        v.setOnKeyListener((x,k,e)->{
++            if(e.getAction()==KeyEvent.ACTION_UP && (k==KeyEvent.KEYCODE_DPAD_CENTER || k==KeyEvent.KEYCODE_ENTER || k==KeyEvent.KEYCODE_NUMPAD_ENTER || k==KeyEvent.KEYCODE_BUTTON_A)){
++                action.run();
++                return true;
++            }
++            return false;
++        });
++    }
++
++    private ImageView brandLogo(){
++        ImageView v=new ImageView(this);
++        v.setScaleType(ImageView.ScaleType.CENTER_INSIDE);
++        v.setAdjustViewBounds(true);
++        v.setPadding(dp(4),dp(2),dp(4),dp(2));
++        ImageLoader.load(v, "https://ap24.top/ibo/tv_digital_logo.png", Color.TRANSPARENT);
++        return v;
++    }
++
+     private TextView tv(String s,int sp,int color,boolean bold){TextView v=new TextView(this);v.setText(s);v.setTextSize(sp);v.setTextColor(color);v.setGravity(Gravity.CENTER_VERTICAL);if(bold)v.setTypeface(Typeface.DEFAULT_BOLD);return v;}
+     private GradientDrawable round(int fill,int stroke,int width,int radius){GradientDrawable g=new GradientDrawable();g.setColor(fill);g.setCornerRadius(dp(radius));if(width>0)g.setStroke(dp(width),stroke);return g;}
+     private int dp(int v){return(int)(v*getResources().getDisplayMetrics().density+.5f);}
+@@ -771,22 +783,60 @@
+     private static final class CatRow{final String id,name;final int count;CatRow(String id,String name,int count){this.id=id;this.name=name;this.count=count;}}
+     private final class CategoryAdapter extends BaseAdapter{
+         private final List<CatRow> data;Categ
