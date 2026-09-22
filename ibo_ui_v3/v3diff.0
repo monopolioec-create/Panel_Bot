@@ -1,0 +1,83 @@
+--- a/MainActivity.java
++++ b/MainActivity.java
+@@ -171,14 +171,12 @@
+             box.setGravity(Gravity.CENTER);
+             box.setPadding(dp(42), dp(28), dp(42), dp(28));
+ 
+-            TextView logo = tv("TV DIGITAL", 36, TEXT, true);
+-            logo.setGravity(Gravity.CENTER);
+-            logo.setBackground(round(PANEL2, ACCENT, 2, 16));
+-            box.addView(logo, new LinearLayout.LayoutParams(dp(360), dp(105)));
++            ImageView logo = brandLogo();
++            box.addView(logo, new LinearLayout.LayoutParams(dp(360), dp(210)));
+ 
+-            TextView title = tv("MediaPlayerIbo", 28, TEXT, true);
++            TextView title = tv(t("Tu entretenimiento en un solo lugar", "Your entertainment in one place"), 22, TEXT, true);
+             title.setGravity(Gravity.CENTER);
+-            box.addView(title, new LinearLayout.LayoutParams(-1, dp(62)));
++            box.addView(title, new LinearLayout.LayoutParams(-1, dp(56)));
+ 
+             TextView info = tv(message, 17, MUTED, false);
+             info.setGravity(Gravity.CENTER);
+@@ -217,10 +215,8 @@
+ 
+         LinearLayout top = new LinearLayout(this);
+         top.setGravity(Gravity.CENTER_VERTICAL);
+-        TextView brand = tv("TV DIGITAL", 25, TEXT, true);
+-        brand.setPadding(dp(18), 0, dp(18), 0);
+-        brand.setBackground(round(Color.argb(210, 9, 22, 25), ACCENT, 1, 10));
+-        top.addView(brand, new LinearLayout.LayoutParams(dp(210), dp(58)));
++        ImageView brand = brandLogo();
++        top.addView(brand, new LinearLayout.LayoutParams(dp(150), dp(58)));
+         TextView spacer = tv("", 1, TEXT, false);
+         top.addView(spacer, new LinearLayout.LayoutParams(0, dp(58), 1));
+         TextView clock = tv("", 15, TEXT, false);
+@@ -302,11 +298,7 @@
+         l.setGravity(Gravity.CENTER);
+         c.addView(i, new LinearLayout.LayoutParams(-1, 0, 1));
+         c.addView(l, new LinearLayout.LayoutParams(-1, dp(46)));
+-        c.setOnClickListener(v -> action.run());
+-        c.setOnKeyListener((v, k, e) -> {
+-            if (e.getAction() == KeyEvent.ACTION_UP && (k == KeyEvent.KEYCODE_DPAD_CENTER || k == KeyEvent.KEYCODE_ENTER)) { action.run(); return true; }
+-            return false;
+-        });
++        wireAction(c, action);
+         c.setOnFocusChangeListener((v, h) -> {
+             updateCardBackground(v, h);
+             v.animate().scaleX(h ? 1.045f : 1f).scaleY(h ? 1.045f : 1f).setDuration(110).start();
+@@ -416,9 +408,8 @@
+ 
+         TextView flex = tv("", 1, TEXT, false);
+         bar.addView(flex, new LinearLayout.LayoutParams(0, dp(42), 1));
+-        TextView pl = tv((config.playlistName == null || config.playlistName.isEmpty()) ? "TV DIGITAL" : config.playlistName, 14, MUTED, true);
+-        pl.setGravity(Gravity.END | Gravity.CENTER_VERTICAL);
+-        bar.addView(pl, new LinearLayout.LayoutParams(dp(170), dp(42)));
++        ImageView brand = brandLogo();
++        bar.addView(brand, new LinearLayout.LayoutParams(dp(92), dp(42)));
+         TextView set = focusButton("⚙", 20, this::showSettings);
+         bar.addView(set, new LinearLayout.LayoutParams(dp(52), dp(42)));
+         return bar;
+@@ -431,8 +422,7 @@
+         boolean active = sectionKind.equals(kind);
+         TextView v = tv(label, 16, active ? SELECTED : Color.rgb(210, 218, 220), false);
+         v.setGravity(Gravity.CENTER);
+-        v.setFocusable(true); v.setClickable(true);
+-        v.setOnClickListener(x -> action.run());
++        wireAction(v, action);
+         v.setOnFocusChangeListener((x,h) -> x.setBackgroundColor(h ? Color.rgb(18, 43, 47) : Color.TRANSPARENT));
+         return v;
+     }
+@@ -470,7 +460,7 @@
+     }
+ 
+     private LinearLayout.LayoutParams actionLp() { LinearLayout.LayoutParams p=new LinearLayout.LayoutParams(dp(155),dp(42));p.setMargins(dp(5),0,dp(5),0);return p; }
+-    private TextView actionButton(String s,Runnable r){TextView v=tv(s,13,TEXT,true);v.setGravity(Gravity.CENTER);v.setFocusable(true);v.setClickable(true);v.setBackground(round(Color.rgb(4,48,55),ACCENT,1,12));v.setOnClickListener(x->r.run());v.setOnFocusChangeListener((x,h)->x.setBackground(round(h?Color.rgb(9,77,84):Color.rgb(4,48,55),h?SELECTED:ACCENT,h?2:1,12)));return v;}
++    private TextView actionButton(String s,Runnable r){TextView v=tv(s,13,TEXT,true);v.setGravity(Gravity.CENTER);v.setBackground(round(Color.rgb(4,48,55),ACCENT,1,12));wireAction(v,r);v.setOnFocusChangeListener((x,h)->x.setBackground(round(h?Color.rgb(9,77,84):Color.rgb(4,48,55),h?SELECTED:ACCENT,h?2:1,12)));return v;}
+ 
+     private void buildMediaBody(LinearLayout body) {
+         LinearLayout right = new LinearLayout(this);
+@@ -671,7 +661,7 @@
+     private void showSettings(){
+         screen="settings";releasePlayer(true);root.removeAllViews();
+         LinearLayout all=new LinearLayout(this);all.setOrientation(LinearLayout.VERTICAL);all.setPadding(dp(26),dp(16),dp(26),dp(18));
+-        LinearLayout h=new LinearLayout(this);h.setGravity(Gravity.CENTER_VERTICAL);TextView back=actio
