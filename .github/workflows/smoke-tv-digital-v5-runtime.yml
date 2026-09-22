@@ -32,13 +32,12 @@ jobs:
           cat ibo_v4/v4line.00 ibo_v4/v4line.01 ibo_v4/v4line.02 ibo_v4/v4line.03 > /tmp/v4.patch
           (cd ibo_independent/android/app/src/main/java/com/monopolio/mediaplayeribo && patch --batch -p1 < /tmp/v4.patch || true)
           cp ibo_v4/tv_digital_icon.png ibo_independent/android/app/src/main/res/drawable/tv_digital_icon.png
-      - name: Apply exact V5 source
+      - name: Apply stable V5.1 source
         run: |
           MAIN=ibo_independent/android/app/src/main/java/com/monopolio/mediaplayeribo
           cat ibo_v5_src/MainActivity.part00 ibo_v5_src/MainActivity.part01 ibo_v5_src/MainActivity.part02 ibo_v5_src/MainActivity.part03 ibo_v5_src/MainActivity.part04 ibo_v5_src/MainActivity.part05 ibo_v5_src/MainActivity.part06 ibo_v5_src/MainActivity.part07 ibo_v5_src/MainActivity.part08 ibo_v5_src/MainActivity.part09 ibo_v5_src/MainActivity.part10 ibo_v5_src/MainActivity.part11 > "$MAIN/MainActivity.java"
-          cp ibo_v5_src/CastOptionsProvider.java "$MAIN/CastOptionsProvider.java"
-          cp ibo_v5_src/build.gradle ibo_independent/android/app/build.gradle
-          cp ibo_v5_src/AndroidManifest.xml ibo_independent/android/app/src/main/AndroidManifest.xml
+          python3 ibo_v51/apply_v51.py
+
       - uses: actions/setup-java@v6
         with:
           distribution: temurin
