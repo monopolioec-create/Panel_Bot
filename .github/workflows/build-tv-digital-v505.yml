@@ -3,7 +3,7 @@ name: Build TV DIGITAL V5.0.5
 on:
   push:
     branches:
-      - tv-digital-v5-final-20260922
+      - tv-digital-v505-background-20260922
   workflow_dispatch:
 
 jobs:
