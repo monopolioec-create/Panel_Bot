@@ -1,0 +1,47 @@
+aveCurrentResume();releasePlayer(false);if("episode".equals(sectionKind))showHome();else if("section".equals(screen))showSectionUI();else if(!sectionKind.isEmpty())showSectionUI();else showHome();}
+
+    private String selectedCategoryLabel(){
+        if("__all".equals(selectedCategory))return "ALL";
+        if("__fav".equals(selectedCategory))return t("Favoritos","Favorites");
+        if("__recent".equals(selectedCategory))return "live".equals(sectionKind)?t("Canales recientes","Recent channels"):t("Visto recientemente","Recently watched");
+        for(XtreamApi.Category c:sectionCategories)if(c.id.equals(selectedCategory))return c.name;
+        return "ALL";
+    }
+
+    private String categoryName(String id){for(XtreamApi.Category c:sectionCategories)if(c.id.equals(id))return c.name;return "";}
+    private boolean isAdultName(String n){if(n==null)return false;String u=n.toUpperCase(Locale.ROOT);return u.contains("ADULT")||u.contains("ADULTO")||u.contains("XXX")||u.contains("+18")||u.contains("18+")||u.contains("PORNO")||u.contains("EROT")||u.contains("SEX ")||u.startsWith("SEX");}
+    private boolean needsParental(XtreamApi.Item item){return prefs.parentalEnabled()&&!parentalSessionUnlocked.contains(item.categoryId)&&isAdultName(categoryName(item.categoryId));}
+    private void runWithParentalForCategory(String categoryId,Runnable action){if(categoryId==null||categoryId.startsWith("__")||!prefs.parentalEnabled()||parentalSessionUnlocked.contains(categoryId)||!isAdultName(categoryName(categoryId))){action.run();return;}verifyParental(()->{parentalSessionUnlocked.add(categoryId);action.run();});}
+    private void verifyParental(Runnable ok){EditText pin=new EditText(this);pin.setInputType(InputType.TYPE_CLASS_NUMBER|InputType.TYPE_NUMBER_VARIATION_PASSWORD);pin.setHint(t("PIN parental","Parental PIN"));pin.setPadding(dp(24),0,dp(24),0);AlertDialog d=new AlertDialog.Builder(this).setTitle(t("Contenido protegido","Protected content")).setMessage(t("Introduce el PIN para acceder a contenido adulto.","Enter the PIN to access adult content.")).setView(pin).setPositiveButton(t("Desbloquear","Unlock"),null).setNegativeButton(t("Cancelar","Cancel"),null).create();d.setOnShowListener(x->d.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v->{if(!prefs.parentalPin().equals(pin.getText().toString().trim())){Toast.makeText(this,t("PIN incorrecto","Incorrect PIN"),Toast.LENGTH_SHORT).show();return;}d.dismiss();ok.run();}));d.show();}
+
+    private void startHeroCarousel(ImageView hero,TextView title,TextView meta,int ticket){
+        if(config!=null&&"static".equalsIgnoreCase(config.heroMode)&&config.heroStaticUrl!=null&&!config.heroStaticUrl.isEmpty()){ImageLoader.load(hero,config.heroStaticUrl,Color.rgb(16,28,32));return;}
+        io.execute(()->{try{List<XtreamApi.Category> cats=XtreamApi.categories(config,"movie");List<XtreamApi.Item> items=XtreamApi.items(config,"movie");String match=(config!=null&&config.heroCategoryMatch!=null&&!config.heroCategoryMatch.isEmpty())?config.heroCategoryMatch:"estreno";String cid=findPremiereCategory(cats,match);if(cid.isEmpty())return;List<XtreamApi.Item> picks=new ArrayList<>();for(XtreamApi.Item it:items)if(cid.equals(it.categoryId)&&((it.backdrop!=null&&!it.backdrop.isEmpty())||(it.icon!=null&&!it.icon.isEmpty())))picks.add(it);if(picks.isEmpty())return;ui.post(()->rotateHero(hero,title,meta,picks,0,ticket));}catch(Exception ignored){}});
+    }
+    private String findPremiereCategory(List<XtreamApi.Category> cats,String match){String m=match.toLowerCase(Locale.ROOT);String best="";int bestYear=-1;for(XtreamApi.Category c:cats){String n=c.name.toLowerCase(Locale.ROOT);if(!n.contains(m)&&!n.contains("estreno"))continue;int year=0;for(int i=0;i+3<c.name.length();i++){String q=c.name.substring(i,i+4);try{int y=Integer.parseInt(q);if(y>year)year=y;}catch(Exception ignored){}}if(best.isEmpty()||year>=bestYear){best=c.id;bestYear=year;}}return best;}
+    private void rotateHero(ImageView hero,TextView title,TextView meta,List<XtreamApi.Item> items,int index,int ticket){if(!"home".equals(screen)||ticket!=heroGeneration||items.isEmpty())return;XtreamApi.Item it=items.get(index%items.size());String img=(it.backdrop!=null&&!it.backdrop.isEmpty())?it.backdrop:it.icon;ImageLoader.load(hero,img,Color.rgb(16,28,32));title.setText(it.name);String m=(it.year==null?"":it.year)+(it.rating!=null&&!it.rating.isEmpty()?"   ★ "+it.rating:"");meta.setText(m.isEmpty()?t("Estrenos","Premieres"):m);ui.postDelayed(()->rotateHero(hero,title,meta,items,(index+1)%items.size(),ticket),2500);}
+
+    private void toggleCurrentFavorite(){if(currentPlaying==null)return;toggleFavorite(currentPlaying);if(liveMeta!=null)liveMeta.setText(prefs.isFavorite("live",currentPlaying.id)?"★ "+t("Favorito","Favorite"):t("En reproducción","Playing"));}
+    private void toggleFavorite(XtreamApi.Item item){String k="episode".equals(item.kind)?"series":item.kind;prefs.toggleFavorite(k,item.id);Toast.makeText(this,prefs.isFavorite(k,item.id)?t("Añadido a favoritos","Added to favorites"):t("Eliminado de favoritos","Removed from favorites"),Toast.LENGTH_SHORT).show();refreshSectionItems();}
+
+    private void launchExternal(String url){
+        try{
+            Intent i=new Intent(Intent.ACTION_VIEW);i.setDataAndType(Uri.parse(url),"video/*");i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            String pkg=prefs.externalPackage();if(pkg!=null&&!pkg.isEmpty())i.setPackage(pkg);startActivity(i);
+        }catch(Exception e){Toast.makeText(this,t("No hay reproductor externo disponible","No external player available"),Toast.LENGTH_LONG).show();}
+    }
+
+    private MediaRouteButton createCastButton(){
+        MediaRouteButton b=new MediaRouteButton(this);
+        b.setContentDescription(t("Transmitir a Chromecast","Cast to Chromecast"));
+        try{CastButtonFactory.setUpMediaRouteButton(getApplicationContext(),b);}catch(Throwable ignored){}
+        b.setFocusable(true);
+        return b;
+    }
+
+    private boolean castMedia(String url,XtreamApi.Item item,boolean live){
+        try{
+            CastSession session=CastContext.getSharedInstance(this).getSessionManager().getCurrentCastSession();
+            if(session==null||!session.isConnected()||session.getRemoteMediaClient()==null)return false;
+            MediaMetadata md=new MediaMetadata(MediaMetadata.MEDIA_TYPE_GENERIC);md.putString(MediaMetadata.KEY_TITLE,item.name);
+            String contentType=url.toLowerCase(Locale.ROOT).contains(".m3u8")
