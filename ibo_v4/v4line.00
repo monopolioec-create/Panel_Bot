@@ -1,0 +1,126 @@
+--- a/MainActivity.java
++++ b/MainActivity.java
+@@ -89,6 +89,8 @@
+     private TextView liveTitle;
+     private TextView liveMeta;
+     private EditText searchBox;
++    private int heroGeneration = 0;
++    private final Set<String> parentalSessionUnlocked = new HashSet<>();
+ 
+     private int BG, PANEL, PANEL2, ACCENT, SELECTED, TEXT, MUTED, BORDER;
+ 
+@@ -236,15 +238,13 @@
+         heroInfo.addView(heroTitle, new LinearLayout.LayoutParams(-1, dp(56)));
+         heroInfo.addView(heroMeta, new LinearLayout.LayoutParams(-1, dp(38)));
+         all.addView(heroInfo, new LinearLayout.LayoutParams(-1, 0, .50f));
++        final int heroTicket = ++heroGeneration;
++        startHeroCarousel(hero, heroTitle, heroMeta, heroTicket);
+ 
+         LinearLayout cards = new LinearLayout(this);
+         cards.setGravity(Gravity.CENTER);
+         cards.setPadding(0, dp(8), 0, dp(8));
+-        cards.addView(homeCard("▣", t("TV en vivo", "Live TV"), () -> loadSection("live", "")), cardLp());
+-        cards.addView(homeCard("▶", t("Películas", "Movies"), () -> loadSection("movie", "")), cardLp());
+-        cards.addView(homeCard("▤", t("Series", "Series"), () -> loadSection("series", "")), cardLp());
+-        cards.addView(homeCard("◉", t("Sports", "Sports"), () -> loadSection("live", "sport")), cardLp());
+-        cards.addView(homeCard("⇄", t("Cambiar lista", "Switch playlist"), this::showPlaylistPanelInfo), cardLp());
++        addConfiguredHomeCards(cards);
+         all.addView(cards, new LinearLayout.LayoutParams(-1, 0, .36f));
+ 
+         LinearLayout bottom = new LinearLayout(this);
+@@ -278,6 +278,20 @@
+         });
+     }
+ 
++    private void addConfiguredHomeCards(LinearLayout cards){
++        String order=(config==null||config.homeOrder==null||config.homeOrder.trim().isEmpty())?"live,movie,series,sports,playlist":config.homeOrder;
++        Set<String> added=new HashSet<>();
++        for(String raw:order.split(",")){String k=raw.trim().toLowerCase(Locale.ROOT);if(k.isEmpty()||!added.add(k))continue;addHomeCardByKey(cards,k);}
++        String[] defaults={"live","movie","series","sports","playlist"};for(String k:defaults)if(!added.contains(k))addHomeCardByKey(cards,k);
++    }
++    private void addHomeCardByKey(LinearLayout cards,String k){
++        if("live".equals(k))cards.addView(homeCard(config==null?"▣":config.iconLive,t("TV en vivo","Live TV"),()->loadSection("live","")),cardLp());
++        else if("movie".equals(k))cards.addView(homeCard(config==null?"▶":config.iconMovie,t("Películas","Movies"),()->loadSection("movie","")),cardLp());
++        else if("series".equals(k))cards.addView(homeCard(config==null?"▤":config.iconSeries,t("Series","Series"),()->loadSection("series","")),cardLp());
++        else if("sports".equals(k))cards.addView(homeCard(config==null?"◉":config.iconSports,t("Sports","Sports"),()->loadSection("live","sport")),cardLp());
++        else if("playlist".equals(k))cards.addView(homeCard(config==null?"⇄":config.iconPlaylist,t("Cambiar lista","Switch playlist"),this::showPlaylistPanelInfo),cardLp());
++    }
++
+     private LinearLayout.LayoutParams cardLp() {
+         LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(0, -1, 1);
+         p.setMargins(dp(8), 0, dp(8), 0);
+@@ -502,8 +516,12 @@
+         categoryList.setSelection(selected);
+         categoryList.setOnItemClickListener((p,v,pos,id)->{
+             CatRow r=rows.get(pos);
+-            selectedCategory=r.id;
+-            refreshSectionItems();
++            runWithParentalForCategory(r.id, () -> {
++                selectedCategory=r.id;
++                refreshSectionItems();
++                categoryList.invalidateViews();
++                v.animate().scaleX(1.015f).scaleY(1.015f).setDuration(70).withEndAction(() -> v.animate().scaleX(1f).scaleY(1f).setDuration(90).start()).start();
++            });
+         });
+         categoryList.setOnItemLongClickListener((p,v,pos,id)->{
+             CatRow r=rows.get(pos);
+@@ -559,7 +577,7 @@
+                 if(!out.isEmpty()&&prefs.autoPreview())ui.postDelayed(()->{if(!out.isEmpty())playLive(out.get(0));},350);
+             }
+         }else{
+-            if(sectionCount!=null)sectionCount.setText("ALL("+out.size()+")");
++            if(sectionCount!=null)sectionCount.setText(selectedCategoryLabel()+" ("+out.size()+")");
+             if(mediaGrid!=null){
+                 mediaGrid.setAdapter(new MediaAdapter(out));
+                 mediaGrid.setOnItemClickListener((p,v,pos,id)->{
+@@ -589,6 +607,11 @@
+     }
+ 
+     private void playLive(XtreamApi.Item item) {
++        if (needsParental(item)) { verifyParental(() -> playLiveUnlocked(item)); return; }
++        playLiveUnlocked(item);
++    }
++
++    private void playLiveUnlocked(XtreamApi.Item item) {
+         currentPlaying=item;currentPlayingKind="live";prefs.addRecent("live",item.id);
+         String url=XtreamApi.playback(config,item,prefs.liveFormat());
+         if("external".equals(prefs.playerMode())){launchExternal(url);return;}
+@@ -601,6 +624,11 @@
+     }
+ 
+     private void openSeries(XtreamApi.Item series) {
++        if (needsParental(series)) { verifyParental(() -> openSeriesUnlocked(series)); return; }
++        openSeriesUnlocked(series);
++    }
++
++    private void openSeriesUnlocked(XtreamApi.Item series) {
+         showLoading(t("Cargando episodios…","Loading episodes…"));
+         io.execute(()->{
+             try{
+@@ -622,6 +650,11 @@
+     }
+ 
+     private void playFull(XtreamApi.Item item) {
++        if (needsParental(item)) { verifyParental(() -> playFullUnlocked(item)); return; }
++        playFullUnlocked(item);
++    }
++
++    private void playFullUnlocked(XtreamApi.Item item) {
+         String kind="live".equals(item.kind)?"live":"movie".equals(item.kind)?"movie":"series";
+         currentPlaying=item;currentPlayingKind=kind;prefs.addRecent(kind,item.id);
+         String url=XtreamApi.playback(config,item,prefs.liveFormat());
+@@ -639,6 +672,27 @@
+ 
+     private void returnFromPlayer(){saveCurrentResume();releasePlayer(false);if("episode".equals(sectionKind))showHome();else if("section".equals(screen))showSectionUI();else if(!sectionKind.isEmpty())showSectionUI();else showHome();}
+ 
++    private String selectedCategoryLabel(){
++        if("__all".equals(selectedCategory))return "ALL";
++        if("__fav".equals(selectedCategory))return t("Favoritos","Favorites");
++        if("__recent".equals(selectedCategory))return "live".equals(sectionKind)?t("Canales recientes","Recent channels"):t("Visto recientemente","Recently watched");
++        for(XtreamApi.Category c:sectionCategories)if(c.id.equals(selectedCategory))return c.name;
++        return "ALL";
++    }
++
++    private String categoryName(String id){for(XtreamApi.Category c:sectionCategories)if(c.id.equals(id))return c.name;return "";}
++    private boolean isAdultName(String n){if(n==null)return false;String u=n.toUpperCase(Locale.ROOT);return u.contains("ADULT")||u.contains("ADULTO")||u.contains("XXX")||u.contains("+18")||u.contains("18+")||u.contains("PORNO")||u.contains("EROT")||u.contains("SEX ")||u.startsWith("SEX");}
++    private boolean needsParental(XtreamApi.Item item){return prefs.parentalEnabled()&&!parentalSessionUnlocked.contains(item.categoryId)&&isAdultName(categoryName(item.categoryId));}
