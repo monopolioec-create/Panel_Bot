@@ -1,0 +1,82 @@
+name: Build TV DIGITAL V5.1.1 Safe
+
+on:
+  push:
+    branches:
+      - tv-digital-v51-safe-20260922
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Restore V5 source
+        run: |
+          MAIN=ibo_independent/android/app/src/main/java/com/monopolio/mediaplayeribo
+          cat ibo_v5_src/MainActivity.part00 ibo_v5_src/MainActivity.part01 ibo_v5_src/MainActivity.part02 ibo_v5_src/MainActivity.part03 ibo_v5_src/MainActivity.part04 ibo_v5_src/MainActivity.part05 ibo_v5_src/MainActivity.part06 ibo_v5_src/MainActivity.part07 ibo_v5_src/MainActivity.part08 ibo_v5_src/MainActivity.part09 ibo_v5_src/MainActivity.part10 ibo_v5_src/MainActivity.part11 > "$MAIN/MainActivity.java"
+          cp ibo_v5_src/CastOptionsProvider.java "$MAIN/CastOptionsProvider.java"
+          cp ibo_v5_src/build.gradle ibo_independent/android/app/build.gradle
+          cp ibo_v5_src/AndroidManifest.xml ibo_independent/android/app/src/main/AndroidManifest.xml
+
+      - name: Install validated branding
+        run: |
+          mkdir -p ibo_independent/android/app/src/main/res/drawable
+          base64 -d ibo_v51/tv_digital_logo.b64 > ibo_independent/android/app/src/main/res/drawable/tv_digital_icon.png
+          cat > ibo_independent/android/app/src/main/res/drawable/tv_digital_banner.xml <<'EOF'
+          <layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+              <item>
+                  <shape android:shape="rectangle">
+                      <solid android:color="#05080A"/>
+                  </shape>
+              </item>
+              <item android:gravity="center">
+                  <bitmap android:src="@drawable/tv_digital_icon" android:gravity="center"/>
+              </item>
+          </layer-list>
+          EOF
+          file ibo_independent/android/app/src/main/res/drawable/tv_digital_icon.png
+          test "$(stat -c%s ibo_independent/android/app/src/main/res/drawable/tv_digital_icon.png)" -gt 7000
+
+      - name: Apply startup and safe-cast fixes
+        run: |
+          python3 ibo_v51/fix_v51.py
+          python3 ibo_v51/fix_v511_safe_cast.py
+          rm -f ibo_independent/android/app/src/main/java/com/monopolio/mediaplayeribo/CastOptionsProvider.java
+          grep -q 'progressBarStyleHorizontal' ibo_independent/android/app/src/main/java/com/monopolio/mediaplayeribo/MainActivity.java
+          grep -q 'showCatalogPreload' ibo_independent/android/app/src/main/java/com/monopolio/mediaplayeribo/MainActivity.java
+          grep -q 'openCastSettings' ibo_independent/android/app/src/main/java/com/monopolio/mediaplayeribo/MainActivity.java
+          ! grep -q 'play-services-cast-framework' ibo_independent/android/app/build.gradle
+          grep -q "versionName '5.1.1'" ibo_independent/android/app/build.gradle
+          grep -q 'android:banner="@drawable/tv_digital_banner"' ibo_independent/android/app/src/main/AndroidManifest.xml
+
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v4.0.4
+      - run: sdkmanager "platform-tools" "platforms;android-35" "build-tools;35.0.0"
+      - uses: gradle/actions/setup-gradle@v6
+        with:
+          gradle-version: '8.9'
+
+      - name: Build APK
+        working-directory: ibo_independent/android
+        run: gradle :app:assembleDebug --no-daemon --stacktrace
+
+      - name: Verify APK
+        run: |
+          cp ibo_independent/android/app/build/outputs/apk/debug/app-debug.apk TV_DIGITAL_Premium_V5_1_1.apk
+          unzip -t TV_DIGITAL_Premium_V5_1_1.apk
+          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging TV_DIGITAL_Premium_V5_1_1.apk | head -20
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose TV_DIGITAL_Premium_V5_1_1.apk
+          sha256sum TV_DIGITAL_Premium_V5_1_1.apk
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: TV_DIGITAL_Premium_V5_1_1_APK
+          path: TV_DIGITAL_Premium_V5_1_1.apk
+          if-no-files-found: error
