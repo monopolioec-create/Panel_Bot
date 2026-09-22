@@ -1,0 +1,127 @@
+name: Build TV DIGITAL V5.0.2
+
+on:
+  push:
+    branches:
+      - tv-digital-v5-final-20260922
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Reconstruct V4 base
+        run: |
+          mkdir -p /tmp/ibo_patch
+          cat ibo_ui_v2/main2.b64.01 ibo_ui_v2/main2.b64.02 ibo_ui_v2/main2.b64.03 ibo_ui_v2/main2.b64.04 ibo_ui_v2/main2.b64.05 ibo_ui_v2/main2.b64.06a ibo_ui_v2/main2.b64.07 > /tmp/main.b64
+          base64 -d /tmp/main.b64 > /tmp/MainActivity.java.gz
+          gzip -dc /tmp/MainActivity.java.gz > ibo_independent/android/app/src/main/java/com/monopolio/mediaplayeribo/MainActivity.java
+          cat ibo_ui_v2/other2.b64.01 ibo_ui_v2/other2.b64.02 ibo_ui_v2/other2.b64.03 > /tmp/other.b64
+          base64 -d /tmp/other.b64 > /tmp/other.tgz
+          tar -xzf /tmp/other.tgz -C /tmp/ibo_patch
+          cp /tmp/ibo_patch/AppPrefs.java ibo_independent/android/app/src/main/java/com/monopolio/mediaplayeribo/AppPrefs.java
+          cp /tmp/ibo_patch/ImageLoader.java ibo_independent/android/app/src/main/java/com/monopolio/mediaplayeribo/ImageLoader.java
+          cp /tmp/ibo_patch/XtreamApi.java ibo_independent/android/app/src/main/java/com/monopolio/mediaplayeribo/XtreamApi.java
+          cp /tmp/ibo_patch/build.gradle ibo_independent/android/app/build.gradle
+          cp /tmp/ibo_patch/AndroidManifest.xml ibo_independent/android/app/src/main/AndroidManifest.xml
+          cat ibo_ui_v3/v3diff.0 ibo_ui_v3/v3diff.1 ibo_ui_v3/v3diff.2 ibo_ui_v3/v3diff.3 > /tmp/v3.patch
+          (cd ibo_independent/android/app/src/main/java/com/monopolio/mediaplayeribo && patch -p1 < /tmp/v3.patch)
+          cat ibo_v4/v4line.00 ibo_v4/v4line.01 ibo_v4/v4line.02 ibo_v4/v4line.03 > /tmp/v4.patch
+          (cd ibo_independent/android/app/src/main/java/com/monopolio/mediaplayeribo && patch --batch -p1 < /tmp/v4.patch || true)
+          cp ibo_v4/tv_digital_icon.png ibo_independent/android/app/src/main/res/drawable/tv_digital_icon.png
+
+      - name: Restore V5 exact source
+        run: |
+          MAIN=ibo_independent/android/app/src/main/java/com/monopolio/mediaplayeribo
+          cat ibo_v5_src/MainActivity.part00 ibo_v5_src/MainActivity.part01 ibo_v5_src/MainActivity.part02 ibo_v5_src/MainActivity.part03 ibo_v5_src/MainActivity.part04 ibo_v5_src/MainActivity.part05 ibo_v5_src/MainActivity.part06 ibo_v5_src/MainActivity.part07 ibo_v5_src/MainActivity.part08 ibo_v5_src/MainActivity.part09 ibo_v5_src/MainActivity.part10 ibo_v5_src/MainActivity.part11 > "$MAIN/MainActivity.java"
+          cp ibo_v5_src/CastOptionsProvider.java "$MAIN/CastOptionsProvider.java"
+          cp ibo_v5_src/build.gradle ibo_independent/android/app/build.gradle
+          cp ibo_v5_src/AndroidManifest.xml ibo_independent/android/app/src/main/AndroidManifest.xml
+          test "$(wc -c < "$MAIN/MainActivity.java")" -eq 74686
+
+      - name: Apply V5.0.1 and V5.0.2 fixes
+        run: |
+          python3 ibo_v5_src/patch_v501.py
+          python3 ibo_v5_src/patch_v502.py
+
+          RES=ibo_independent/android/app/src/main/res
+
+          # Remove adaptive-icon XMLs. Some TV Box launchers were falling back to the generic Android robot.
+          rm -rf "$RES/mipmap-anydpi" "$RES/mipmap-anydpi-v26"
+          mkdir -p "$RES/mipmap-mdpi" "$RES/mipmap-hdpi" "$RES/mipmap-xhdpi" "$RES/mipmap-xxhdpi" "$RES/mipmap-xxxhdpi" "$RES/drawable"
+
+          # Use a real bitmap resource for every launcher density.
+          for D in mdpi hdpi xhdpi xxhdpi xxxhdpi; do
+            cp ibo_v4/tv_digital_icon.png "$RES/mipmap-$D/ic_launcher.png"
+            cp ibo_v4/tv_digital_icon.png "$RES/mipmap-$D/ic_launcher_round.png"
+          done
+          cp ibo_v4/tv_digital_icon.png "$RES/drawable/tv_digital_banner.png"
+
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path('ibo_independent/android/app/src/main/AndroidManifest.xml')
+          s=p.read_text()
+          s=s.replace('android:icon="@drawable/tv_digital_icon"','android:icon="@mipmap/ic_launcher"')
+          s=s.replace('android:roundIcon="@drawable/tv_digital_icon"','android:roundIcon="@mipmap/ic_launcher_round"')
+          s=s.replace('android:roundIcon="@mipmap/ic_launcher"','android:roundIcon="@mipmap/ic_launcher_round"')
+          if 'android:banner=' not in s:
+              s=s.replace('android:roundIcon="@mipmap/ic_launcher_round"', 'android:roundIcon="@mipmap/ic_launcher_round"\n        android:banner="@drawable/tv_digital_banner"')
+          p.write_text(s)
+          PY
+
+      - name: Functional audit
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          m=Path('ibo_independent/android/app/src/main/java/com/monopolio/mediaplayeribo/MainActivity.java').read_text()
+          manifest=Path('ibo_independent/android/app/src/main/AndroidManifest.xml').read_text()
+          gradle=Path('ibo_independent/android/app/build.gradle').read_text()
+          res=Path('ibo_independent/android/app/src/main/res')
+          checks={
+            'startup local logo':'logo.setImageResource(com.monopolio.mediaplayeribo.R.drawable.tv_digital_icon)' in m,
+            'horizontal startup bar':'progressBarStyleHorizontal' in m,
+            'launcher bitmap icon':'android:icon="@mipmap/ic_launcher"' in manifest,
+            'round bitmap icon':'android:roundIcon="@mipmap/ic_launcher_round"' in manifest,
+            'no adaptive icon xml':not (res/'mipmap-anydpi-v26/ic_launcher.xml').exists(),
+            'all launcher densities':all((res/f'mipmap-{d}/ic_launcher.png').exists() for d in ['mdpi','hdpi','xhdpi','xxhdpi','xxxhdpi']),
+            'version 5.0.2':"versionName '5.0.2'" in gradle,
+          }
+          for k,v in checks.items(): print(('PASS ' if v else 'FAIL ')+k)
+          if not all(checks.values()): raise SystemExit(1)
+          PY
+
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v4.0.4
+      - run: sdkmanager "platform-tools" "platforms;android-35" "build-tools;35.0.0"
+      - uses: gradle/actions/setup-gradle@v6
+        with:
+          gradle-version: '8.9'
+
+      - name: Compile
+        working-directory: ibo_independent/android
+        run: gradle :app:compileDebugJavaWithJavac --no-daemon --stacktrace
+
+      - name: Build APK
+        working-directory: ibo_independent/android
+        run: gradle :app:assembleDebug --no-daemon --stacktrace
+
+      - name: Verify APK
+        run: |
+          cp ibo_independent/android/app/build/outputs/apk/debug/app-debug.apk TV_DIGITAL_Premium_V5_0_2.apk
+          unzip -t TV_DIGITAL_Premium_V5_0_2.apk
+          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging TV_DIGITAL_Premium_V5_0_2.apk | head -20
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose TV_DIGITAL_Premium_V5_0_2.apk
+          sha256sum TV_DIGITAL_Premium_V5_0_2.apk
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: TV_DIGITAL_Premium_V5_0_2_APK
+          path: TV_DIGITAL_Premium_V5_0_2.apk
+          if-no-files-found: error
