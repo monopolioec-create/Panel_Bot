@@ -1,0 +1,67 @@
+?"application/x-mpegURL":url.toLowerCase(Locale.ROOT).contains(".mp4")?"video/mp4":"video/mp2t";
+            MediaInfo info=new MediaInfo.Builder(url).setStreamType(live?MediaInfo.STREAM_TYPE_LIVE:MediaInfo.STREAM_TYPE_BUFFERED).setContentType(contentType).setMetadata(md).build();
+            RemoteMediaClient remote=session.getRemoteMediaClient();remote.load(new MediaLoadRequestData.Builder().setMediaInfo(info).setAutoplay(true).build());
+            releasePlayer(false);
+            return true;
+        }catch(Throwable e){Toast.makeText(this,t("No se pudo iniciar Chromecast","Could not start Chromecast"),Toast.LENGTH_SHORT).show();return false;}
+    }
+
+    private void scheduleLiveHealthCheck(XtreamApi.Item item,int ticket){
+        ui.postDelayed(()->{
+            if(ticket!=liveHealthGeneration||currentPlaying==null||!currentPlaying.id.equals(item.id)||player==null)return;
+            int state=player.getPlaybackState();
+            if(state!=Player.STATE_READY||(!player.isPlaying()&&state==Player.STATE_BUFFERING))showChannelOffline(item);
+        },15000);
+    }
+
+    private void showChannelOffline(XtreamApi.Item item){
+        if(currentPlaying==null||!currentPlaying.id.equals(item.id))return;
+        ++liveHealthGeneration;
+        releasePlayer(false);
+        if(livePreview==null)return;
+        livePreview.removeAllViews();livePreview.setBackgroundColor(Color.rgb(4,8,11));
+        LinearLayout card=new LinearLayout(this);card.setOrientation(LinearLayout.VERTICAL);card.setGravity(Gravity.CENTER);card.setPadding(dp(44),dp(28),dp(44),dp(28));
+        TextView icon=tv("◌",54,ACCENT,true);icon.setGravity(Gravity.CENTER);card.addView(icon,new LinearLayout.LayoutParams(-1,dp(72)));
+        TextView title=tv(t("CANAL TEMPORALMENTE FUERA DE SERVICIO","CHANNEL TEMPORARILY OFFLINE"),22,TEXT,true);title.setGravity(Gravity.CENTER);card.addView(title,new LinearLayout.LayoutParams(-1,dp(58)));
+        TextView msg=tv(t("Este canal no está disponible en este momento. Nuestro equipo técnico ya está trabajando para restablecer la señal lo antes posible.","This channel is currently unavailable. Our technical team is already working to restore the signal as soon as possible."),15,MUTED,false);msg.setGravity(Gravity.CENTER);msg.setPadding(dp(30),0,dp(30),0);card.addView(msg,new LinearLayout.LayoutParams(-1,dp(86)));
+        TextView retry=actionButton(t("REINTENTAR","RETRY"),()->playLive(item));LinearLayout.LayoutParams rp=new LinearLayout.LayoutParams(dp(190),dp(44));rp.topMargin=dp(12);card.addView(retry,rp);
+        livePreview.addView(card,new FrameLayout.LayoutParams(-1,-1));
+        if(liveTitle!=null)liveTitle.setText(item.name);if(liveMeta!=null)liveMeta.setText(t("Sin señal disponible","Signal unavailable"));
+    }
+
+    private void applySubtitlePrefs(){
+        if(playerView==null)return;
+        try{
+            playerView.getSubtitleView().setVisibility(prefs.subtitles()?View.VISIBLE:View.GONE);
+            float f="small".equals(prefs.subtitleSize())?.043f:"large".equals(prefs.subtitleSize())?.075f:.058f;
+            playerView.getSubtitleView().setFractionalTextSize(f);
+        }catch(Throwable ignored){}
+    }
+
+    private void showSettings(){
+        screen="settings";releasePlayer(true);root.removeAllViews();
+        LinearLayout all=new LinearLayout(this);all.setOrientation(LinearLayout.VERTICAL);all.setPadding(dp(26),dp(16),dp(26),dp(18));
+        LinearLayout h=new LinearLayout(this);h.setGravity(Gravity.CENTER_VERTICAL);TextView back=actionButton("‹",this::showHome);h.addView(back,new LinearLayout.LayoutParams(dp(60),dp(46)));TextView title=tv(t("Ajustes • TV DIGITAL","Settings • TV DIGITAL"),27,TEXT,false);title.setGravity(Gravity.CENTER);h.addView(title,new LinearLayout.LayoutParams(0,dp(46),1));TextView blank=tv("",1,TEXT,false);h.addView(blank,new LinearLayout.LayoutParams(dp(60),dp(46)));all.addView(h,new LinearLayout.LayoutParams(-1,dp(58)));
+        GridView grid=new GridView(this);grid.setNumColumns(4);grid.setHorizontalSpacing(dp(12));grid.setVerticalSpacing(dp(12));List<SettingItem> data=settingsItems();grid.setAdapter(new SettingsAdapter(data));grid.setOnItemClickListener((p,v,pos,id)->data.get(pos).action.run());all.addView(grid,new LinearLayout.LayoutParams(-1,0,1));root.addView(all,new FrameLayout.LayoutParams(-1,-1));if(!data.isEmpty())grid.requestFocus();
+    }
+
+    private List<SettingItem> settingsItems(){
+        List<SettingItem> x=new ArrayList<>();
+        x.add(new SettingItem("▤",t("Añadir lista de reproducción","Add playlist"),this::showPlaylistPanelInfo));
+        x.add(new SettingItem("▣",t("Control para los padres","Parental control"),this::parentalDialog));
+        x.add(new SettingItem("⇄",t("Cambiar lista de reproducción","Switch playlist"),this::showPlaylistPanelInfo));
+        x.add(new SettingItem("A",t("Cambiar idioma","Change language"),this::languageDialog));
+        x.add(new SettingItem("◇",t("Cambia el diseño","Change design"),this::themeDialog));
+        x.add(new SettingItem("◉",t("Ocultar categorías en vivo","Hide live categories"),()->hideCategoriesDialog("live")));
+        x.add(new SettingItem("◉",t("Ocultar categorías de Vod","Hide VOD categories"),()->hideCategoriesDialog("movie")));
+        x.add(new SettingItem("◉",t("Ocultar categorías de series","Hide series categories"),()->hideCategoriesDialog("series")));
+        x.add(new SettingItem("⌫",t("Borrar historial de canales","Clear channel history"),()->clearHistory("live")));
+        x.add(new SettingItem("⌫",t("Borrar historial de películas","Clear movie history"),()->clearHistory("movie")));
+        x.add(new SettingItem("⌫",t("Borrar historial de series","Clear series history"),()->clearHistory("series")));
+        x.add(new SettingItem("A↕",t("Orden de canales en vivo","Live channel order"),this::liveOrderDialog));
+        x.add(new SettingItem("▣",t("Formato de transmisión en vivo","Live stream format"),this::liveFormatDialog));
+        x.add(new SettingItem("◉",t("Cambiar reproductor","Change player"),this::playerDialog));
+        x.add(new SettingItem("▶",t("Selecciona players externos","Select external players"),this::externalPlayerDialog));
+        x.add(new SettingItem("◌",t("Automático","Automatic"),this::automaticDialog));
+        x.add(new SettingItem("◷",t("Formato del tiempo","Time format"),this::timeFormatDialog));
+        x.add(new SettingItem("▭",t("Configuración de subtítulos","Subtitle set
