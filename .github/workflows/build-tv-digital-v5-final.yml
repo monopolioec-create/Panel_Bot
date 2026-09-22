@@ -83,13 +83,13 @@ jobs:
       - name: Verify APK
         run: |
           cp ibo_independent/android/app/build/outputs/apk/debug/app-debug.apk TV_DIGITAL_Premium_V5_1.apk
-          unzip -t TV_DIGITAL_Premium_V5.apk
-          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging TV_DIGITAL_Premium_V5.apk | head -20
-          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose TV_DIGITAL_Premium_V5.apk
-          sha256sum TV_DIGITAL_Premium_V5.apk
+          unzip -t TV_DIGITAL_Premium_V5_1.apk
+          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging TV_DIGITAL_Premium_V5_1.apk | head -20
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose TV_DIGITAL_Premium_V5_1.apk
+          sha256sum TV_DIGITAL_Premium_V5_1.apk
 
       - uses: actions/upload-artifact@v7
         with:
           name: TV_DIGITAL_Premium_V5_1_APK
-          path: TV_DIGITAL_Premium_V5.apk
+          path: TV_DIGITAL_Premium_V5_1.apk
           if-no-files-found: error
