@@ -1,0 +1,201 @@
+name: Build TV DIGITAL V3 Fixed QA
+
+on:
+  push:
+    branches:
+      - ibo-ui-v3-brand-debug-20260921
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Restore Premium V2 source
+        run: |
+          mkdir -p /tmp/ibo_patch
+          cat ibo_ui_v2/main2.b64.01 ibo_ui_v2/main2.b64.02 ibo_ui_v2/main2.b64.03 ibo_ui_v2/main2.b64.04 ibo_ui_v2/main2.b64.05 ibo_ui_v2/main2.b64.06a ibo_ui_v2/main2.b64.07 > /tmp/main.b64
+          base64 -d /tmp/main.b64 > /tmp/MainActivity.java.gz
+          gzip -t /tmp/MainActivity.java.gz
+          gzip -dc /tmp/MainActivity.java.gz > ibo_independent/android/app/src/main/java/com/monopolio/mediaplayeribo/MainActivity.java
+          cat ibo_ui_v2/other2.b64.01 ibo_ui_v2/other2.b64.02 ibo_ui_v2/other2.b64.03 > /tmp/other.b64
+          base64 -d /tmp/other.b64 > /tmp/other.tgz
+          tar -xzf /tmp/other.tgz -C /tmp/ibo_patch
+          cp /tmp/ibo_patch/AppPrefs.java ibo_independent/android/app/src/main/java/com/monopolio/mediaplayeribo/AppPrefs.java
+          cp /tmp/ibo_patch/ImageLoader.java ibo_independent/android/app/src/main/java/com/monopolio/mediaplayeribo/ImageLoader.java
+          cp /tmp/ibo_patch/XtreamApi.java ibo_independent/android/app/src/main/java/com/monopolio/mediaplayeribo/XtreamApi.java
+          cp /tmp/ibo_patch/build.gradle ibo_independent/android/app/build.gradle
+          cp /tmp/ibo_patch/AndroidManifest.xml ibo_independent/android/app/src/main/AndroidManifest.xml
+
+      - name: Apply V3 branding and interaction patch
+        run: |
+          cat ibo_ui_v3/v3diff.0 ibo_ui_v3/v3diff.1 ibo_ui_v3/v3diff.2 ibo_ui_v3/v3diff.3 > /tmp/v3.patch
+          MAIN=ibo_independent/android/app/src/main/java/com/monopolio/mediaplayeribo
+          (cd "$MAIN" && patch -p1 < /tmp/v3.patch)
+
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path('ibo_independent/android/app/src/main/java/com/monopolio/mediaplayeribo/MainActivity.java')
+          s=p.read_text()
+          s=s.replace('Collections.sort(out,Comparator.comparing(x->x.name.toLowerCase(Locale.US)));',
+                      'Collections.sort(out,(a,b)->a.name.toLowerCase(Locale.US).compareTo(b.name.toLowerCase(Locale.US)));')
+          s=s.replace('.toUpperCase()', '.toUpperCase(Locale.ROOT)')
+          p.write_text(s)
+
+          p=Path('ibo_independent/android/app/src/main/java/com/monopolio/mediaplayeribo/DeviceIdentity.java')
+          s=p.read_text()
+          if 'import java.util.Locale;' not in s:
+              s=s.replace('import java.util.Collections;', 'import java.util.Collections;\nimport java.util.Locale;')
+          s=s.replace('.toLowerCase();', '.toLowerCase(Locale.ROOT);')
+          p.write_text(s)
+          PY
+
+          cat > ibo_independent/android/app/build.gradle <<'EOF'
+          plugins { id 'com.android.application' }
+          def panelApiUrl = providers.gradleProperty('PANEL_API_URL').getOrElse('https://ap24.top/ibo/index.php')
+          android {
+              namespace 'com.monopolio.mediaplayeribo'
+              compileSdk 35
+              defaultConfig {
+                  applicationId 'com.monopolio.mediaplayeribo'
+                  minSdk 23
+                  targetSdk 35
+                  versionCode 4
+                  versionName '3.0.1'
+                  buildConfigField 'String', 'PANEL_API_URL', '"' + panelApiUrl + '"'
+                  buildConfigField 'String', 'PANEL_APP_KEY', '"GELQV-YktQ03TB6_VsSWOyFDfJBJuTT65M25YUG8O58"'
+              }
+              buildFeatures { buildConfig true }
+              testOptions { unitTests.includeAndroidResources = true }
+              buildTypes {
+                  release {
+                      minifyEnabled false
+                      proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+                  }
+              }
+          }
+          dependencies {
+              implementation 'androidx.media3:media3-exoplayer:1.5.1'
+              implementation 'androidx.media3:media3-exoplayer-hls:1.5.1'
+              implementation 'androidx.media3:media3-ui:1.5.1'
+              testImplementation 'junit:junit:4.13.2'
+              testImplementation 'org.robolectric:robolectric:4.13.2'
+          }
+          EOF
+
+          sed -i 's/android:label="MediaPlayerIbo"/android:label="TV DIGITAL"/' ibo_independent/android/app/src/main/AndroidManifest.xml
+
+      - name: Interaction audit
+        run: |
+          MAIN=ibo_independent/android/app/src/main/java/com/monopolio/mediaplayeribo/MainActivity.java
+          grep -q 'wireAction(b,s.action)' "$MAIN"
+          grep -q 'wireAction(box,()->' "$MAIN"
+          grep -q 'wireAction(row,()->playLive' "$MAIN"
+          grep -q 'KEYCODE_DPAD_CENTER' "$MAIN"
+          grep -q 'KEYCODE_ENTER' "$MAIN"
+          grep -q 'KEYCODE_NUMPAD_ENTER' "$MAIN"
+          grep -q 'KEYCODE_BUTTON_A' "$MAIN"
+          grep -q 'https://ap24.top/ibo/tv_digital_logo.png' "$MAIN"
+          test "$(grep -c 'new SettingItem' "$MAIN")" -ge 20
+          grep -q 'this::parentalDialog' "$MAIN"
+          grep -q 'this::languageDialog' "$MAIN"
+          grep -q 'this::themeDialog' "$MAIN"
+          grep -q 'this::liveOrderDialog' "$MAIN"
+          grep -q 'this::liveFormatDialog' "$MAIN"
+          grep -q 'this::playerDialog' "$MAIN"
+          grep -q 'this::externalPlayerDialog' "$MAIN"
+          grep -q 'this::subtitleDialog' "$MAIN"
+          grep -q 'this::deviceTypeDialog' "$MAIN"
+          grep -q 'this::refreshNow' "$MAIN"
+
+      - name: Create behavior tests
+        run: |
+          TEST=ibo_independent/android/app/src/test/java/com/monopolio/mediaplayeribo
+          mkdir -p "$TEST"
+          cat > "$TEST/UiActionBindingTest.java" <<'EOF'
+          package com.monopolio.mediaplayeribo;
+          import static org.junit.Assert.*;
+          import android.app.Activity;
+          import android.view.KeyEvent;
+          import android.widget.TextView;
+          import org.junit.Test;
+          import org.junit.runner.RunWith;
+          import org.robolectric.Robolectric;
+          import org.robolectric.RobolectricTestRunner;
+          import java.util.concurrent.atomic.AtomicInteger;
+          @RunWith(RobolectricTestRunner.class)
+          public class UiActionBindingTest {
+              @Test public void clickTriggersAction() {
+                  Activity a=Robolectric.buildActivity(Activity.class).setup().get();
+                  TextView v=new TextView(a); AtomicInteger c=new AtomicInteger();
+                  MainActivity.wireAction(v,c::incrementAndGet);
+                  assertTrue(v.performClick()); assertEquals(1,c.get());
+              }
+              @Test public void centerKeyTriggersAction() {
+                  Activity a=Robolectric.buildActivity(Activity.class).setup().get();
+                  TextView v=new TextView(a); AtomicInteger c=new AtomicInteger();
+                  MainActivity.wireAction(v,c::incrementAndGet);
+                  v.dispatchKeyEvent(new KeyEvent(KeyEvent.ACTION_UP,KeyEvent.KEYCODE_DPAD_CENTER));
+                  assertEquals(1,c.get());
+              }
+          }
+          EOF
+          cat > "$TEST/AppPrefsTest.java" <<'EOF'
+          package com.monopolio.mediaplayeribo;
+          import static org.junit.Assert.*;
+          import android.app.Activity;
+          import org.junit.*;
+          import org.junit.runner.RunWith;
+          import org.robolectric.Robolectric;
+          import org.robolectric.RobolectricTestRunner;
+          @RunWith(RobolectricTestRunner.class)
+          public class AppPrefsTest {
+              @Test public void preferencesPersist() {
+                  Activity a=Robolectric.buildActivity(Activity.class).setup().get();
+                  AppPrefs p=new AppPrefs(a);
+                  p.language("en"); p.theme("gold"); p.liveFormat("m3u8"); p.liveOrder("name");
+                  p.playerMode("auto"); p.autoPreview(true); p.timeFormat("12"); p.subtitles(false);
+                  p.subtitleSize("large"); p.deviceType("tv"); p.parentalEnabled(true); p.parentalPin("4321");
+                  assertEquals("en",p.language()); assertEquals("gold",p.theme());
+                  assertEquals("m3u8",p.liveFormat()); assertEquals("name",p.liveOrder());
+                  assertEquals("auto",p.playerMode()); assertTrue(p.autoPreview());
+                  assertEquals("12",p.timeFormat()); assertFalse(p.subtitles());
+                  assertEquals("large",p.subtitleSize()); assertEquals("tv",p.deviceType());
+                  assertTrue(p.parentalEnabled()); assertEquals("4321",p.parentalPin());
+              }
+          }
+          EOF
+
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v4.0.4
+      - run: sdkmanager "platform-tools" "platforms;android-35" "build-tools;35.0.0"
+      - uses: gradle/actions/setup-gradle@v6
+        with:
+          gradle-version: '8.9'
+
+      - name: Unit tests
+        working-directory: ibo_independent/android
+        run: gradle :app:testDebugUnitTest --no-daemon --stacktrace
+
+      - name: Build APK
+        working-directory: ibo_independent/android
+        run: gradle :app:assembleDebug --no-daemon --stacktrace
+
+      - name: Verify APK
+        run: |
+          cp ibo_independent/android/app/build/outputs/apk/debug/app-debug.apk TV_DIGITAL_Premium_V3_301.apk
+          unzip -t TV_DIGITAL_Premium_V3_301.apk
+          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging TV_DIGITAL_Premium_V3_301.apk | head -12
+          sha256sum TV_DIGITAL_Premium_V3_301.apk
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: TV_DIGITAL_Premium_V3_301
+          path: TV_DIGITAL_Premium_V3_301.apk
+          if-no-files-found: error
