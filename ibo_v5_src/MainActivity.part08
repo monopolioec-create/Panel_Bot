@@ -1,0 +1,51 @@
+tings"),this::subtitleDialog));
+        x.add(new SettingItem("▣",t("Select Device Type","Select Device Type"),this::deviceTypeDialog));
+        x.add(new SettingItem("↻",t("Actualice ahora","Update now"),this::refreshNow));
+        return x;
+    }
+
+    private void showPlaylistPanelInfo(){
+        new AlertDialog.Builder(this).setTitle(t("Listas administradas por panel","Panel-managed playlists"))
+                .setMessage(t("Por seguridad, esta aplicación recibe servidor, usuario y contraseña exclusivamente desde tu panel.\n\nDispositivo: ","For security, server, username and password come exclusively from your panel.\n\nDevice: ")+identity.deviceKey.substring(0,16).toUpperCase()+"\nMAC: "+(identity.mac.isEmpty()?"N/A":identity.mac)+"\n\n"+t("Cambia la lista en el panel y pulsa ACTUALIZAR.","Change the playlist in the panel and press REFRESH."))
+                .setPositiveButton(t("Actualizar","Refresh"),(d,w)->refreshNow()).setNegativeButton(t("Cerrar","Close"),null).show();
+    }
+
+    private void parentalDialog(){
+        if (!prefs.parentalEnabled()) {
+            showSetParentalPinDialog(false);
+            return;
+        }
+        String[] a={t("Cambiar PIN","Change PIN"),t("Desactivar control parental","Disable parental control")};
+        new AlertDialog.Builder(this).setTitle(t("Control parental activado","Parental control enabled")).setItems(a,(d,w)->{
+            if(w==0)verifyCurrentPin(() -> showSetParentalPinDialog(true));
+            else verifyCurrentPin(() -> {prefs.parentalEnabled(false);parentalSessionUnlocked.clear();Toast.makeText(this,t("Control parental desactivado","Parental control disabled"),Toast.LENGTH_SHORT).show();});
+        }).setNegativeButton(t("Cancelar","Cancel"),null).show();
+    }
+
+    private void showSetParentalPinDialog(boolean changing){
+        LinearLayout box=new LinearLayout(this);box.setOrientation(LinearLayout.VERTICAL);box.setPadding(dp(24),dp(8),dp(24),0);
+        EditText pin=new EditText(this);pin.setInputType(InputType.TYPE_CLASS_NUMBER|InputType.TYPE_NUMBER_VARIATION_PASSWORD);pin.setHint(t("Nuevo PIN (mínimo 4 dígitos)","New PIN (minimum 4 digits)"));box.addView(pin);
+        EditText confirm=new EditText(this);confirm.setInputType(InputType.TYPE_CLASS_NUMBER|InputType.TYPE_NUMBER_VARIATION_PASSWORD);confirm.setHint(t("Confirmar PIN","Confirm PIN"));box.addView(confirm);
+        AlertDialog dialog=new AlertDialog.Builder(this).setTitle(changing?t("Cambiar PIN parental","Change parental PIN"):t("Activar control parental","Enable parental control")).setView(box).setPositiveButton(t("Guardar","Save"),null).setNegativeButton(t("Cancelar","Cancel"),null).create();
+        dialog.setOnShowListener(x->dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v->{String a=pin.getText().toString().trim(),b=confirm.getText().toString().trim();if(a.length()<4||!a.equals(b)){Toast.makeText(this,t("Los PIN deben coincidir y tener al menos 4 dígitos","PINs must match and have at least 4 digits"),Toast.LENGTH_LONG).show();return;}prefs.parentalPin(a);prefs.parentalEnabled(true);parentalSessionUnlocked.clear();Toast.makeText(this,t("Control parental activado","Parental control enabled"),Toast.LENGTH_SHORT).show();dialog.dismiss();}));
+        dialog.show();
+    }
+
+    private void verifyCurrentPin(Runnable ok){
+        EditText pin=new EditText(this);pin.setInputType(InputType.TYPE_CLASS_NUMBER|InputType.TYPE_NUMBER_VARIATION_PASSWORD);pin.setHint(t("PIN actual","Current PIN"));pin.setPadding(dp(24),0,dp(24),0);
+        AlertDialog dialog=new AlertDialog.Builder(this).setTitle(t("Confirma tu PIN","Confirm your PIN")).setView(pin).setPositiveButton(t("Confirmar","Confirm"),null).setNegativeButton(t("Cancelar","Cancel"),null).create();
+        dialog.setOnShowListener(x->dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v->{if(!prefs.parentalPin().equals(pin.getText().toString().trim())){Toast.makeText(this,t("PIN incorrecto","Incorrect PIN"),Toast.LENGTH_SHORT).show();return;}dialog.dismiss();ok.run();}));
+        dialog.show();
+    }
+
+    private void languageDialog(){String[] a={"Español","English"};int c="en".equals(prefs.language())?1:0;new AlertDialog.Builder(this).setTitle(t("Idioma","Language")).setSingleChoiceItems(a,c,(d,w)->{prefs.language(w==1?"en":"es");d.dismiss();showSettings();}).show();}
+    private void themeDialog(){String[] a={t("Elegante turquesa","Elegant teal"),t("Dorado premium","Premium gold"),t("Azul moderno","Modern blue")};String cur=prefs.theme();int c="gold".equals(cur)?1:"blue".equals(cur)?2:0;new AlertDialog.Builder(this).setTitle(t("Diseño","Design")).setSingleChoiceItems(a,c,(d,w)->{prefs.theme(w==1?"gold":w==2?"blue":"teal");applyThemeColors();d.dismiss();showSettings();}).show();}
+
+    private void hideCategoriesDialog(String kind){
+        showLoading(t("Cargando categorías…","Loading categories…"));io.execute(()->{try{List<XtreamApi.Category> cats=XtreamApi.categories(config,kind);ui.post(()->{
+            showSettings();Set<String> hidden=prefs.hiddenCategories(kind);String[] names=new String[cats.size()];boolean[] checks=new boolean[cats.size()];for(int i=0;i<cats.size();i++){names[i]=cats.get(i).name;checks[i]=hidden.contains(cats.get(i).id);}new AlertDialog.Builder(this).setTitle(t("Selecciona las categorías a ocultar","Select categories to hide")).setMultiChoiceItems(names,checks,(d,which,isChecked)->checks[which]=isChecked).setPositiveButton(t("Guardar","Save"),(d,w)->{Set<String> s=new HashSet<>();for(int i=0;i<cats.size();i++)if(checks[i])s.add(cats.get(i).id);prefs.hiddenCategories(kind,s);}).setNegativeButton(t("Cancelar","Cancel"),null).show();
+        });}catch(Exception e){ui.post(()->{showSettings();Toast.makeText(this,msg(e),Toast.LENGTH_LONG).show();});}});
+    }
+
+    private void clearHistory(String kind){new AlertDialog.Builder(this).setTitle(t("Confirmar","Confirm")).setMessage(t("¿Borrar este historial?","Clear this history?")).setPositiveButton(t("Borrar","Clear"),(d,w)->{prefs.clearRecent(kind);Toast.makeText(this,t("Historial borrado","History cleared"),Toast.LENGTH_SHORT).show();}).setNegativeButton(t("Cancelar","Cancel"),null).show();}
+    private void liveOrderDialog(){String[] a={t("Orden del servidor","Server order"),t("Nombre A-Z","Name A-Z")};int c="name".equals(prefs.liveOrder())?1:0;new AlertDialog.Builder(this).setTitle(t("Canales en vivo","Live channels")).setSingleChoiceItems(a,c,(d,w)->{prefs.liveOrder(w==1?"name":"server")
