@@ -5,6 +5,8 @@ s=p.read_text()
 
 if 'import androidx.mediarouter.media.MediaRouteSelector;' not in s:
     s=s.replace('import androidx.mediarouter.app.MediaRouteButton;', 'import androidx.mediarouter.app.MediaRouteButton;\nimport androidx.mediarouter.media.MediaRouteSelector;')
+if 'import com.google.android.gms.cast.CastMediaControlIntent;' not in s:
+    s=s.replace('import com.google.android.gms.cast.MediaInfo;', 'import com.google.android.gms.cast.CastMediaControlIntent;\nimport com.google.android.gms.cast.MediaInfo;')
 
 needle='''        root = new FrameLayout(this);
         root.setBackgroundColor(BG);
