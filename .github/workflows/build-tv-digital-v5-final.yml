@@ -1,9 +1,9 @@
-name: Build TV DIGITAL V5 Final
+name: Build TV DIGITAL V5.1 Stable
 
 on:
   push:
     branches:
-      - tv-digital-v5-final-20260922
+      - tv-digital-v51-stable2-20260922
   workflow_dispatch:
 
 jobs:
@@ -34,16 +34,11 @@ jobs:
           (cd ibo_independent/android/app/src/main/java/com/monopolio/mediaplayeribo && patch --batch -p1 < /tmp/v4.patch || true)
           cp ibo_v4/tv_digital_icon.png ibo_independent/android/app/src/main/res/drawable/tv_digital_icon.png
 
-      - name: Apply V5 final code
+      - name: Apply V5.1 stable code
         run: |
           MAIN=ibo_independent/android/app/src/main/java/com/monopolio/mediaplayeribo
           cat ibo_v5_src/MainActivity.part00 ibo_v5_src/MainActivity.part01 ibo_v5_src/MainActivity.part02 ibo_v5_src/MainActivity.part03 ibo_v5_src/MainActivity.part04 ibo_v5_src/MainActivity.part05 ibo_v5_src/MainActivity.part06 ibo_v5_src/MainActivity.part07 ibo_v5_src/MainActivity.part08 ibo_v5_src/MainActivity.part09 ibo_v5_src/MainActivity.part10 ibo_v5_src/MainActivity.part11 > "$MAIN/MainActivity.java"
-          cp ibo_v5_src/CastOptionsProvider.java "$MAIN/CastOptionsProvider.java"
-          cp ibo_v5_src/build.gradle ibo_independent/android/app/build.gradle
-          cp ibo_v5_src/AndroidManifest.xml ibo_independent/android/app/src/main/AndroidManifest.xml
-          test -f ibo_independent/android/app/src/main/res/drawable/tv_digital_icon.png
-          echo "V5 MainActivity bytes: $(wc -c < "$MAIN/MainActivity.java")"
-          test "$(wc -c < "$MAIN/MainActivity.java")" -eq 74686
+          python3 ibo_v51/apply_v51.py
 
       - name: Functional audit
         run: |
@@ -52,20 +47,16 @@ jobs:
           m=Path('ibo_independent/android/app/src/main/java/com/monopolio/mediaplayeribo/MainActivity.java').read_text()
           manifest=Path('ibo_independent/android/app/src/main/AndroidManifest.xml').read_text()
           gradle=Path('ibo_independent/android/app/build.gradle').read_text()
-          provider=Path('ibo_independent/android/app/src/main/java/com/monopolio/mediaplayeribo/CastOptionsProvider.java').read_text()
           checks={
-            'persistent selected live-channel highlight':'liveRowBackground' in m and 'liveList.invalidateViews()' in m,
-            'native player restore option':'Predeterminado de TV DIGITAL (interno)' in m and 'prefs.playerMode("internal")' in m,
-            'Cast route button':'createCastButton' in m and 'CastButtonFactory.setUpMediaRouteButton' in m,
-            'Cast media load':'MediaLoadRequestData' in m and 'castMedia(' in m,
-            'Cast provider metadata':'OPTIONS_PROVIDER_CLASS_NAME' in manifest and 'CastOptionsProvider' in provider,
-            'offline channel screen':'CANAL TEMPORALMENTE FUERA DE SERVICIO' in m and 'showChannelOffline' in m,
-            'stall health check':'scheduleLiveHealthCheck' in m and '15000' in m,
-            'startup preload':'preloadCatalogAndShowHome' in m and 'CountDownLatch' in m,
-            'no normal section spinner':'showLoading(t("Cargando contenido' not in m[m.find('private void loadSection'):m.find('private void showSectionUI')],
-            'catalog cache':'catalogCategories' in m and 'catalogItems' in m,
-            'launcher icon':'android:icon="@drawable/tv_digital_icon"' in manifest and 'android:roundIcon="@drawable/tv_digital_icon"' in manifest,
-            'cast dependency':'play-services-cast-framework' in gradle,
+            'startup horizontal progress':'progressBarStyleHorizontal' in m and 'startupProgressText' in m,
+            'preload percentage':'updateStartupProgress(100' in m,
+            'safe cast':'android.settings.CAST_SETTINGS' in m and 'CastContext' not in m,
+            'no hard cast dependency':'play-services-cast-framework' not in gradle,
+            'selected live highlight':'liveRowBackground' in m and 'liveList.invalidateViews()' in m,
+            'offline screen':'CANAL TEMPORALMENTE FUERA DE SERVICIO' in m,
+            'preload cache':'catalogCategories' in m and 'catalogItems' in m,
+            'launcher adaptive':'@mipmap/ic_launcher' in manifest and 'roundIcon' in manifest,
+            'tv banner':'tv_digital_banner' in manifest,
           }
           for k,v in checks.items(): print(('PASS ' if v else 'FAIL ')+k)
           if not all(checks.values()): raise SystemExit(1)
@@ -91,7 +82,7 @@ jobs:
 
       - name: Verify APK
         run: |
-          cp ibo_independent/android/app/build/outputs/apk/debug/app-debug.apk TV_DIGITAL_Premium_V5.apk
+          cp ibo_independent/android/app/build/outputs/apk/debug/app-debug.apk TV_DIGITAL_Premium_V5_1.apk
           unzip -t TV_DIGITAL_Premium_V5.apk
           "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging TV_DIGITAL_Premium_V5.apk | head -20
           "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose TV_DIGITAL_Premium_V5.apk
@@ -99,6 +90,6 @@ jobs:
 
       - uses: actions/upload-artifact@v7
         with:
-          name: TV_DIGITAL_Premium_V5_APK
+          name: TV_DIGITAL_Premium_V5_1_APK
           path: TV_DIGITAL_Premium_V5.apk
           if-no-files-found: error
