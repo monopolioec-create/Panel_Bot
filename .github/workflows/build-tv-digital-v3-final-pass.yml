@@ -1,0 +1,193 @@
+name: Build TV DIGITAL V3 FINAL PASS
+
+on:
+  push:
+    branches:
+      - ibo-ui-v3-brand-debug-20260921
+  workflow_dispatch:
+
+jobs:
+  qa-build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Restore Premium V2 source
+        run: |
+          mkdir -p /tmp/ibo_patch
+          cat ibo_ui_v2/main2.b64.01 ibo_ui_v2/main2.b64.02 ibo_ui_v2/main2.b64.03 ibo_ui_v2/main2.b64.04 ibo_ui_v2/main2.b64.05 ibo_ui_v2/main2.b64.06a ibo_ui_v2/main2.b64.07 > /tmp/main.b64
+          base64 -d /tmp/main.b64 > /tmp/MainActivity.java.gz
+          gzip -t /tmp/MainActivity.java.gz
+          gzip -dc /tmp/MainActivity.java.gz > ibo_independent/android/app/src/main/java/com/monopolio/mediaplayeribo/MainActivity.java
+          cat ibo_ui_v2/other2.b64.01 ibo_ui_v2/other2.b64.02 ibo_ui_v2/other2.b64.03 > /tmp/other.b64
+          base64 -d /tmp/other.b64 > /tmp/other.tgz
+          tar -xzf /tmp/other.tgz -C /tmp/ibo_patch
+          cp /tmp/ibo_patch/AppPrefs.java ibo_independent/android/app/src/main/java/com/monopolio/mediaplayeribo/AppPrefs.java
+          cp /tmp/ibo_patch/ImageLoader.java ibo_independent/android/app/src/main/java/com/monopolio/mediaplayeribo/ImageLoader.java
+          cp /tmp/ibo_patch/XtreamApi.java ibo_independent/android/app/src/main/java/com/monopolio/mediaplayeribo/XtreamApi.java
+
+      - name: Apply V3 branding and interaction fixes
+        run: |
+          cat ibo_ui_v3/v3diff.0 ibo_ui_v3/v3diff.1 ibo_ui_v3/v3diff.2 ibo_ui_v3/v3diff.3 > /tmp/v3.patch
+          MAIN_DIR=ibo_independent/android/app/src/main/java/com/monopolio/mediaplayeribo
+          MAIN="$MAIN_DIR/MainActivity.java"
+          (cd "$MAIN_DIR" && patch -p1 < /tmp/v3.patch)
+
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path('ibo_independent/android/app/src/main/java/com/monopolio/mediaplayeribo/MainActivity.java')
+          s=p.read_text()
+          s=s.replace('Collections.sort(out,Comparator.comparing(x->x.name.toLowerCase(Locale.US)));',
+                      'Collections.sort(out,(a,b)->a.name.toLowerCase(Locale.US).compareTo(b.name.toLowerCase(Locale.US)));')
+          s=s.replace('private void applySubtitlePrefs(){',
+                      '@androidx.media3.common.util.UnstableApi\n    private void applySubtitlePrefs(){')
+          s=s.replace('.toUpperCase()', '.toUpperCase(Locale.ROOT)')
+          p.write_text(s)
+
+          p=Path('ibo_independent/android/app/src/main/java/com/monopolio/mediaplayeribo/DeviceIdentity.java')
+          s=p.read_text()
+          if 'import java.util.Locale;' not in s:
+              s=s.replace('import java.util.Collections;', 'import java.util.Collections;\nimport java.util.Locale;')
+          s=s.replace('.toLowerCase();', '.toLowerCase(Locale.ROOT);')
+          p.write_text(s)
+
+          cat > ibo_independent/android/app/build.gradle <<'EOF'
+          plugins { id 'com.android.application' }
+          def panelApiUrl = providers.gradleProperty('PANEL_API_URL').getOrElse('https://ap24.top/ibo/index.php')
+          android {
+              namespace 'com.monopolio.mediaplayeribo'
+              compileSdk 35
+              defaultConfig {
+                  applicationId 'com.monopolio.mediaplayeribo'
+                  minSdk 23
+                  targetSdk 35
+                  versionCode 3
+                  versionName '3.0.0'
+                  buildConfigField 'String', 'PANEL_API_URL', '"' + panelApiUrl + '"'
+                  buildConfigField 'String', 'PANEL_APP_KEY', '"GELQV-YktQ03TB6_VsSWOyFDfJBJuTT65M25YUG8O58"'
+              }
+              buildFeatures { buildConfig true }
+              buildTypes {
+                  release {
+                      minifyEnabled false
+                      proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+                  }
+              }
+          }
+          dependencies {
+              implementation 'androidx.media3:media3-exoplayer:1.5.1'
+              implementation 'androidx.media3:media3-exoplayer-hls:1.5.1'
+              implementation 'androidx.media3:media3-ui:1.5.1'
+          }
+          EOF
+
+          cat > ibo_independent/android/app/src/main/AndroidManifest.xml <<'EOF'
+          <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+              <uses-permission android:name="android.permission.INTERNET" />
+              <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+              <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
+              <uses-feature android:name="android.hardware.touchscreen" android:required="false" />
+              <uses-feature android:name="android.software.leanback" android:required="false" />
+              <queries>
+                  <intent>
+                      <action android:name="android.intent.action.VIEW" />
+                      <data android:mimeType="video/*" />
+                  </intent>
+              </queries>
+              <application
+                  android:allowBackup="false"
+                  android:usesCleartextTraffic="true"
+                  android:label="TV DIGITAL"
+                  android:icon="@drawable/ic_launcher"
+                  android:banner="@drawable/ic_launcher"
+                  android:theme="@style/AppTheme"
+                  android:networkSecurityConfig="@xml/network_security_config">
+                  <activity
+                      android:name=".MainActivity"
+                      android:screenOrientation="landscape"
+                      android:configChanges="keyboard|keyboardHidden|orientation|screenSize"
+                      android:exported="true">
+                      <intent-filter>
+                          <action android:name="android.intent.action.MAIN" />
+                          <category android:name="android.intent.category.LAUNCHER" />
+                          <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
+                      </intent-filter>
+                  </activity>
+              </application>
+          </manifest>
+          EOF
+
+      - name: Interaction and feature audit
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+          s=Path('ibo_independent/android/app/src/main/java/com/monopolio/mediaplayeribo/MainActivity.java').read_text()
+          checks={
+            'settings click':'wireAction(b,s.action)' in s,
+            'movie/series cards click':'wireAction(box,()->' in s,
+            'live channel click':'wireAction(row,()->playLive' in s,
+            'category click':'selectedCategory=x.id;refreshSectionItems' in s,
+            'home cards click':'wireAction(c, action)' in s,
+            'top navigation click':'wireAction(v, action)' in s,
+            'generic buttons click':'wireAction(v,r)' in s,
+            'remote OK':'KEYCODE_DPAD_CENTER' in s,
+            'remote Enter':'KEYCODE_ENTER' in s,
+            'remote Numpad Enter':'KEYCODE_NUMPAD_ENTER' in s,
+            'gamepad A':'KEYCODE_BUTTON_A' in s,
+            'TV DIGITAL logo':'https://ap24.top/ibo/tv_digital_logo.png' in s,
+            'favorites':'toggleFavorite(item)' in s,
+            'hide category':'Categoría oculta' in s,
+            'Android 6 compatible sort':'Comparator.comparing' not in s,
+            'subtitle opt-in':'@androidx.media3.common.util.UnstableApi' in s,
+          }
+          count=len(re.findall(r'new SettingItem\(',s))
+          if count < 15: raise SystemExit(f'FAIL settings count {count}')
+          for name,ok in checks.items(): print(('PASS' if ok else 'FAIL'),name)
+          bad=[k for k,v in checks.items() if not v]
+          if bad: raise SystemExit('FAIL: '+', '.join(bad))
+          print('PASS settings wired:',count)
+          PY
+          grep -q 'android.hardware.touchscreen.*required="false"' ibo_independent/android/app/src/main/AndroidManifest.xml
+          grep -q 'android.software.leanback.*required="false"' ibo_independent/android/app/src/main/AndroidManifest.xml
+          grep -q 'android:banner=' ibo_independent/android/app/src/main/AndroidManifest.xml
+
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v4.0.4
+      - run: sdkmanager "platform-tools" "platforms;android-35" "build-tools;35.0.0"
+      - uses: gradle/actions/setup-gradle@v6
+        with:
+          gradle-version: '8.9'
+
+      - name: Compile Java
+        working-directory: ibo_independent/android
+        run: gradle :app:compileDebugJavaWithJavac --no-daemon --stacktrace
+
+      - name: Android Lint
+        working-directory: ibo_independent/android
+        run: gradle :app:lintDebug --no-daemon --stacktrace
+
+      - name: Build installable APK
+        working-directory: ibo_independent/android
+        run: gradle :app:assembleDebug --no-daemon --stacktrace
+
+      - name: Verify package
+        run: |
+          cp ibo_independent/android/app/build/outputs/apk/debug/app-debug.apk TV_DIGITAL_Premium_V3.apk
+          unzip -t TV_DIGITAL_Premium_V3.apk
+          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging TV_DIGITAL_Premium_V3.apk | tee /tmp/badging.txt
+          grep -q "application-label:'TV DIGITAL'" /tmp/badging.txt
+          grep -q "versionName='3.0.0'" /tmp/badging.txt
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose --print-certs TV_DIGITAL_Premium_V3.apk
+          sha256sum TV_DIGITAL_Premium_V3.apk
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: TV_DIGITAL_Premium_V3_FINAL_PASS
+          path: TV_DIGITAL_Premium_V3.apk
+          if-no-files-found: error
