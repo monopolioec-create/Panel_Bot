@@ -1,0 +1,30 @@
+erride public long getItemId(int p){return p;}
+-        @Override public View getView(int p,View v,ViewGroup parent){XtreamApi.Item item=data.get(p);LinearLayout box=new LinearLayout(MainActivity.this);box.setOrientation(LinearLayout.VERTICAL);box.setFocusable(true);box.setClickable(true);box.setPadding(dp(3),dp(3),dp(3),dp(3));box.setBackground(round(Color.rgb(7,33,38),BORDER,1,7));ImageView image=new ImageView(MainActivity.this);image.setScaleType(ImageView.ScaleType.CENTER_CROP);String img=!item.icon.isEmpty()?item.icon:item.backdrop;ImageLoader.load(image,img,Color.rgb(30,38,42));box.addView(image,new LinearLayout.LayoutParams(-1,dp(188)));TextView name=tv(item.name,12,TEXT,false);name.setMaxLines(2);name.setPadding(dp(7),dp(3),dp(7),dp(3));box.addView(name,new LinearLayout.LayoutParams(-1,dp(42)));TextView meta=tv((!item.year.isEmpty()?item.year+"   ":"")+(!item.rating.isEmpty()?"★"+item.rating:""),10,MUTED,false);meta.setPadding(dp(7),0,dp(7),0);box.addView(meta,new LinearLayout.LayoutParams(-1,dp(24)));box.setOnFocusChangeListener((x,h)->{box.setBackground(round(h?Color.rgb(9,70,76):Color.rgb(7,33,38),h?SELECTED:BORDER,h?2:1,7));box.animate().scaleX(h?1.025f:1f).scaleY(h?1.025f:1f).setDuration(90).start();});return box;}
++        @Override public View getView(int p,View v,ViewGroup parent){
++            XtreamApi.Item item=data.get(p);
++            LinearLayout box=new LinearLayout(MainActivity.this);box.setOrientation(LinearLayout.VERTICAL);box.setPadding(dp(3),dp(3),dp(3),dp(3));box.setBackground(round(Color.rgb(7,33,38),BORDER,1,7));
++            ImageView image=new ImageView(MainActivity.this);image.setScaleType(ImageView.ScaleType.CENTER_CROP);String img=!item.icon.isEmpty()?item.icon:item.backdrop;ImageLoader.load(image,img,Color.rgb(30,38,42));box.addView(image,new LinearLayout.LayoutParams(-1,dp(188)));
++            TextView name=tv(item.name,12,TEXT,false);name.setMaxLines(2);name.setPadding(dp(7),dp(3),dp(7),dp(3));box.addView(name,new LinearLayout.LayoutParams(-1,dp(42)));
++            TextView meta=tv((!item.year.isEmpty()?item.year+"   ":"")+(!item.rating.isEmpty()?"★"+item.rating:""),10,MUTED,false);meta.setPadding(dp(7),0,dp(7),0);box.addView(meta,new LinearLayout.LayoutParams(-1,dp(24)));
++            wireAction(box,()->{if("series".equals(item.kind))openSeries(item);else playFull(item);});
++            box.setOnLongClickListener(z->{toggleFavorite(item);return true;});
++            box.setOnFocusChangeListener((x,h)->{box.setBackground(round(h?Color.rgb(9,70,76):Color.rgb(7,33,38),h?SELECTED:BORDER,h?2:1,7));box.animate().scaleX(h?1.025f:1f).scaleY(h?1.025f:1f).setDuration(90).start();});
++            return box;
++        }
+     }
+ 
+     private static final class SettingItem{final String icon,label;final Runnable action;SettingItem(String i,String l,Runnable a){icon=i;label=l;action=a;}}
+     private final class SettingsAdapter extends BaseAdapter{
+         private final List<SettingItem>d;SettingsAdapter(List<SettingItem>x){d=x;}@Override public int getCount(){return d.size();}@Override public Object getItem(int p){return d.get(p);}@Override public long getItemId(int p){return p;}
+-        @Override public View getView(int p,View v,ViewGroup parent){SettingItem s=d.get(p);LinearLayout b=new LinearLayout(MainActivity.this);b.setGravity(Gravity.CENTER_VERTICAL);b.setPadding(dp(15),dp(8),dp(12),dp(8));b.setFocusable(true);b.setClickable(true);b.setBackground(round(Color.rgb(3,42,48),Color.rgb(9,69,76),1,10));TextView i=tv(s.icon,25,TEXT,true);i.setGravity(Gravity.CENTER);b.addView(i,new LinearLayout.LayoutParams(dp(52),dp(58)));TextView l=tv(s.label,15,TEXT,false);l.setMaxLines(2);l.setPadding(dp(10),0,0,0);b.addView(l,new LinearLayout.LayoutParams(0,dp(58),1));b.setOnFocusChangeListener((x,h)->b.setBackground(round(h?Color.rgb(6,74,82):Color.rgb(3,42,48),h?SELECTED:Color.rgb(9,69,76),h?2:1,10)));return b;}
++        @Override public View getView(int p,View v,ViewGroup parent){
++            SettingItem s=d.get(p);
++            LinearLayout b=new LinearLayout(MainActivity.this);b.setGravity(Gravity.CENTER_VERTICAL);b.setPadding(dp(15),dp(8),dp(12),dp(8));b.setBackground(round(Color.rgb(3,42,48),Color.rgb(9,69,76),1,10));
++            TextView i=tv(s.icon,25,TEXT,true);i.setGravity(Gravity.CENTER);b.addView(i,new LinearLayout.LayoutParams(dp(52),dp(58)));
++            TextView l=tv(s.label,15,TEXT,false);l.setMaxLines(2);l.setPadding(dp(10),0,0,0);b.addView(l,new LinearLayout.LayoutParams(0,dp(58),1));
++            wireAction(b,s.action);
++            b.setOnFocusChangeListener((x,h)->b.setBackground(round(h?Color.rgb(6,74,82):Color.rgb(3,42,48),h?SELECTED:Color.rgb(9,69,76),h?2:1,10)));
++            return b;
++        }
+     }
+ }
